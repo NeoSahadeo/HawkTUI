@@ -1,2 +1,2 @@
-.build/main.o: src/main.cpp src/include/hawktui.h
-src/include/hawktui.h:
+.build/main.o: src/main.cpp src/include/hawktui.hpp
+src/include/hawktui.hpp:
