@@ -2,8 +2,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 #ifndef HAWKTUI_H
 #define HAWKTUI_H
@@ -37,6 +40,25 @@ std::unique_ptr<Derived> static_unique_ptr_cast(
   return std::unique_ptr<Derived>(static_cast<Derived*>(ptr.release()));
 }
 
+class EventManager {
+ public:
+  std::unordered_map<std::string, std::vector<std::function<void()>>> handlers;
+
+  template <typename T>
+  void subscribe(const std::string event, T&& callback) {
+    handlers[event].emplace_back(std::forward<T>(callback));
+  }
+
+  template <typename... Args>
+  void dispatch(const std::string event, Args&&... args) {
+    if (auto callbacks = handlers.find(event); callbacks != handlers.end()) {
+      for (auto& f : callbacks->second) {
+        f(std::forward<Args>(args)...);
+      }
+    }
+  }
+};
+
 class UIElement {
  public:
   std::vector<std::shared_ptr<UIElement>> children;
@@ -56,7 +78,7 @@ class UIElement {
 };
 
 /**
- * Creates a UIBox element
+ * Creates a UIBox element - empty box with a border
  * */
 class UIBox : public UIElement {
  public:
@@ -89,6 +111,9 @@ class UIBox : public UIElement {
   TypeId type() const override { return TypeId::Box; };
 };
 
+/*
+ * Creates a UITextiBox, it is a box with text rendered on top of it
+ * */
 class UITextiBox : public UIBox {
  public:
   std::string text;
@@ -103,16 +128,17 @@ class UITextiBox : public UIBox {
              size_t b_h,
              int b_x,
              int b_y,
+             bool d,
              std::string text,
              int x = 0,
              int y = 0)
-      : UIBox(b_w, b_h, b_x, b_y), text(text), t_x(x), t_y(y) {}
+      : UIBox(b_w, b_h, b_x, b_y, d), text(text), t_x(x), t_y(y) {}
 
   void render() override {
-    UIBox::render();
     mvwprintw(window, t_y, t_x, "%s", text.c_str());
     touchwin(window);
     wnoutrefresh(window);
+    UIBox::render();
   }
 };
 
@@ -123,9 +149,13 @@ class UIContext : public UIElement {
  public:
   WINDOW* window;
   mmask_t oldmask;
+  int screen_width;
+  int screen_height;
+  EventManager events;
 
   UIContext() {
     window = initscr();
+    getmaxyx(window, screen_height, screen_width);
     cbreak();
     noecho();
     keypad(stdscr, TRUE);
@@ -160,6 +190,10 @@ class UIContext : public UIElement {
     while ((c = wgetch(window)) != 'q') {
       touchwin(stdscr);
       wnoutrefresh(window);
+      if (c == KEY_RESIZE) {
+        getmaxyx(window, screen_height, screen_width);
+        events.dispatch("resize");
+      }
 
       if (c == KEY_MOUSE) {
         while (getmouse(&event) == OK) {
