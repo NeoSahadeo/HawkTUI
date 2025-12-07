@@ -1,10 +1,13 @@
 #include <ncurses.h>
+#include <any>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <functional>
 #include <memory>
 #include <string>
+#include <tuple>
+#include <typeindex>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -40,20 +43,47 @@ std::unique_ptr<Derived> static_unique_ptr_cast(
   return std::unique_ptr<Derived>(static_cast<Derived*>(ptr.release()));
 }
 
+// template <typename... Args>
+// static std::unordered_map<std::string,
+//                           std::vector<std::function<void(Args&&...)>>>
+//     EventHandlersMap;
+
 class EventManager {
  public:
-  std::unordered_map<std::string, std::vector<std::function<void()>>> handlers;
+  struct Event {};
 
-  template <typename T>
-  void subscribe(const std::string event, T&& callback) {
-    handlers[event].emplace_back(std::forward<T>(callback));
+  std::unordered_map<std::string, std::vector<std::function<void(Event&)>>>
+      handlers;
+
+  /**
+   * Subscribe a callback to an event
+   * */
+  template <typename EventT, typename F>
+  void subscribe(const std::string& event, F&& callback) {
+    handlers[event].emplace_back(
+        [cb = std::forward<F>(callback)](const auto& e) mutable {
+          cb(static_cast<const EventT&>(e));
+        });
   }
 
-  template <typename... Args>
-  void dispatch(const std::string event, Args&&... args) {
+  /**
+   * Dispatch an event with a lvalue
+   * */
+  void dispatch(const std::string& event, Event& data) {
     if (auto callbacks = handlers.find(event); callbacks != handlers.end()) {
       for (auto& f : callbacks->second) {
-        f(std::forward<Args>(args)...);
+        f(data);
+      }
+    }
+  }
+
+  /**
+   * Dispatch an event with an rvalue
+   * */
+  void dispatch(const std::string& event, Event&& data = Event{}) {
+    if (auto callbacks = handlers.find(event); callbacks != handlers.end()) {
+      for (auto& f : callbacks->second) {
+        f(data);
       }
     }
   }
@@ -153,6 +183,11 @@ class UIContext : public UIElement {
   int screen_height;
   EventManager events;
 
+  struct MouseEvent : EventManager::Event {
+    int x;
+    int y;
+  } m_e;
+
   UIContext() {
     window = initscr();
     getmaxyx(window, screen_height, screen_width);
@@ -187,6 +222,7 @@ class UIContext : public UIElement {
     };
     Coords click_offset{0};
     std::shared_ptr<UIElement> current_element;
+
     while ((c = wgetch(window)) != 'q') {
       touchwin(stdscr);
       wnoutrefresh(window);
@@ -204,6 +240,7 @@ class UIContext : public UIElement {
           }
 
           if (event.bstate & BUTTON1_PRESSED) {
+            events.dispatch("mousedown");
             for (auto& child : children) {
               if (child->flags & TypeFlags::Draggable &&
                   child->type() == TypeId::Box) {
@@ -218,7 +255,11 @@ class UIContext : public UIElement {
                 }
               }
             }
+            m_e.x = event.x;
+            m_e.y = event.y;
+            events.dispatch("mousemove", m_e);
           } else if (event.bstate & BUTTON1_RELEASED) {
+            events.dispatch("mouseup");
             current_element.reset();
           }
         }

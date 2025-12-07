@@ -1,4 +1,5 @@
 #include <unistd.h>
+#include <functional>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -15,9 +16,19 @@ int main() {
     return oss.str();
   };
   std::string stats = oss.str();
+
   auto textibox =
       std::make_shared<UITextiBox>(30, 5, 0, 0, false, update_stats(), 1, 1);
-  ctx->events.subscribe("resize", [&]() { textibox->text = update_stats(); });
+  textibox->flags = TypeFlags::Draggable;
+
+  ctx->events.subscribe<EventManager::Event>(
+      "resize",
+      [&](EventManager::Event e) { textibox->text = update_stats(); });
+
+  // ctx->events.subscribe<UIContext::MouseEvent>(
+  //     "mousemove", [&](UIContext::MouseEvent e) {
+  //     printw("%d\n\r", e.x);
+  //     });
 
   // auto box = std::make_shared<UIBox>(10, 5, 0, 0, true);
   // textibox->flags |= TypeFlags::Draggable;
