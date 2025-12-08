@@ -344,6 +344,9 @@ class UIContext : public UIElement {
   TypeId type() const override { return TypeId::Ctx; };
 };
 
+/**
+ * Create a UIButton that auto binds a 'click' event to itself.
+ * */
 class UIButton : public UITextiBox {
  public:
   UIButton() = default;
@@ -351,7 +354,12 @@ class UIButton : public UITextiBox {
   template <typename F>
   UIButton(EventManager* events, std::string text, F&& callback)
       : UITextiBox(text.length() + 2, 3, 0, 0, false, text, 1, 1) {
-    events->subscribe<UIContext::MouseEvent>("click", callback);
+    events->subscribe<UIContext::MouseEvent>(
+        "click", [&](UIContext::MouseEvent e) {
+          if (e.element && e.element->window == window) {
+            callback(e);
+          }
+        });
   }
 
   static std::shared_ptr<UIButton> create(
