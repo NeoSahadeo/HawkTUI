@@ -1,5 +1,4 @@
 #include <ncurses.h>
-#include <any>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -7,27 +6,18 @@
 #include <functional>
 #include <memory>
 #include <string>
-#include <tuple>
-#include <typeindex>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 #ifndef HAWKTUI_H
 #define HAWKTUI_H
 
-enum class TypeId { Ctx, Box, TextiBox, Button, Label };
+enum class TypeId { None, Box, Text, TextiBox, Button, Label };
 
 enum class TypeFlags : uint8_t {
   None = 0,
   Draggable = 1,
 };
-
-// template<typename Enum, typename = std::enable_if_t<std::is_enum_v<Enum>>>
-// constexpr Enum bitwise_op(Enum x, Enum y, auto op) noexcept {
-//   using underlying = std::underlying_type_t<Enum>;
-//   return static_cast<Enum>(op(static_cast<underlying>(x),
-//   static_cast<underlying>(y)));
-// }
 
 constexpr TypeFlags operator|=(TypeFlags& x, TypeFlags y) noexcept {
   x = static_cast<TypeFlags>(static_cast<uint8_t>(x) | static_cast<uint8_t>(y));
@@ -85,28 +75,29 @@ class EventManager {
   }
 };
 
-class UIElement {
+class _AbstractUIElement {
  public:
-  std::vector<std::shared_ptr<UIElement>> children;
-  TypeFlags flags = TypeFlags::None;
-  WINDOW* window = nullptr;
+  ~_AbstractUIElement() = default;
+  _AbstractUIElement() = default;
 
-  virtual TypeId type() const = 0;
-  virtual ~UIElement() = default;
+  std::vector<std::shared_ptr<_AbstractUIElement>> composition{};
+  TypeFlags flags{TypeFlags::None};
+  WINDOW* window{};
+
   virtual void render() = 0;
+  virtual TypeId type() = 0;
+};
 
-  /**
-   * Add a UIElement to the children of the current element
-   * */
-  void add_child(std::shared_ptr<UIElement> child) {
-    children.emplace_back(child);
-  }
+template <TypeId T>
+class IUIElement : public _AbstractUIElement {
+ public:
+  TypeId type() { return T; };
 };
 
 /**
  * Creates a UIBox element - empty box with a border
  * */
-class UIBox : public UIElement {
+class UIBox : public IUIElement<TypeId::Box> {
  public:
   size_t width;
   size_t height;
@@ -119,104 +110,57 @@ class UIBox : public UIElement {
     x = 0;
     y = 0;
     window = newwin(height, width, this->y, this->x);
-    flags = TypeFlags::None;
   }
-
-  UIBox(size_t w, size_t h, int x, int y, bool draggable = false)
-      : width(w), height(h), x(x), y(y) {
-    window = newwin(height, width, this->y, this->x);
-    flags = TypeFlags::None;
-    if (draggable) {
-      flags |= TypeFlags::Draggable;
-    }
-  }
-
-  ~UIBox() { delwin(window); }
 
   void render() override {
     box(window, 0, 0);
     touchwin(window);
     wnoutrefresh(window);
   }
-
-  TypeId type() const override { return TypeId::Box; };
 };
 
-/*
- * Creates a UITextiBox, it is a box with text rendered on top of it
+/**
+ * Creates a text element
  * */
-class UITextiBox : public UIBox {
- private:
-  // Weird hack, there some issues with r and l values when drawing windows.
-  void window_constructor() { derwindow = derwin(window, height, width, y, x); }
-
+class UIText : public IUIElement<TypeId::Text> {
  public:
-  WINDOW* derwindow;
-  std::string text;
-  int t_x;
-  int t_y;
+  std::string label;
+  size_t width;
+  size_t height;
+  int x;
+  int y;
 
-  UITextiBox() = default;
-
-  UITextiBox(std::string& text, int x = 0, int y = 0)
-      : UIBox(), text(text), t_x(x), t_y(y) {
-    window_constructor();
-  }
-
-  UITextiBox(std::string text, int x = 0, int y = 0)
-      : UIBox(), text(text), t_x(x), t_y(y) {
-    window_constructor();
-  }
-
-  UITextiBox(size_t b_w,
-             size_t b_h,
-             int b_x,
-             int b_y,
-             bool d,
-             std::string& text,
-             int x = 0,
-             int y = 0)
-      : UIBox(b_w, b_h, b_x, b_y, d), text(text), t_x(x), t_y(y) {
-    window_constructor();
-  }
-
-  UITextiBox(size_t b_w,
-             size_t b_h,
-             int b_x,
-             int b_y,
-             bool d,
-             std::string&& text,
-             int x = 0,
-             int y = 0)
-      : UIBox(b_w, b_h, b_x, b_y, d), text(text), t_x(x), t_y(y) {
-    derwindow = window;
-  }
-
-  ~UITextiBox() {
-    if (derwindow != window) {
-      delwin(derwindow);
-    }
+  UIText(std::string label) : label(label) {
+    width = 10;
+    height = 5;
+    x = 0;
+    y = 0;
+    window = newwin(height, width, this->y, this->x);
   }
 
   void render() override {
-    if (derwindow != window) {
-      UIBox::render();
-    }
-    mvwprintw(derwindow, t_y, t_x, "%s", text.c_str());
-    touchwin(derwindow);
-    wnoutrefresh(derwindow);
-    if (derwindow == window) {
-      UIBox::render();
-    }
+    mvwprintw(window, 0, 0, "%s", label.c_str());
+    touchwin(window);
+    wnoutrefresh(window);
   }
+};
 
-  TypeId type() const override { return TypeId::TextiBox; };
+/**
+ * Create a button
+ * */
+class UIButton : public IUIElement<TypeId::Button> {
+ public:
+  UIButton() {
+    composition.emplace_back(std::make_shared<UIBox>());
+    composition.emplace_back(std::make_shared<UIText>("This is a button"));
+  }
+  void render() {};
 };
 
 /**
  * UI Context class that sets up the main window and pointer events
  * */
-class UIContext : public UIElement {
+class UIContext {
  public:
   WINDOW* window;
   mmask_t oldmask;
@@ -224,15 +168,17 @@ class UIContext : public UIElement {
   int screen_height;
   EventManager events;
   bool running;
+  std::vector<std::shared_ptr<_AbstractUIElement>> children;
 
   struct MouseEvent : EventManager::Event {
     int x;
     int y;
-    std::shared_ptr<UIElement> element;
+    std::shared_ptr<_AbstractUIElement> element;
   } m_e;
 
   UIContext() {
     window = initscr();
+    // start_color();
     getmaxyx(window, screen_height, screen_width);
     cbreak();
     noecho();
@@ -253,19 +199,19 @@ class UIContext : public UIElement {
     mousemask(oldmask, NULL);
     delwin(window);
     endwin();
-
     children.clear();
   }
 
   void start() {
-    render();
+    render(children);
     int c;
     MEVENT event;
     struct Coords {
       int x, y;
     };
     Coords click_offset{0};
-    std::shared_ptr<UIElement> current_element;
+
+    std::shared_ptr<_AbstractUIElement> current_element;
     c = wgetch(window);
     while (running) {
       c = wgetch(window);
@@ -285,21 +231,21 @@ class UIContext : public UIElement {
           m_e.x = event.x;
           m_e.y = event.y;
           events.dispatch("mousemove", m_e);
-          if (current_element &&
-              current_element->flags & TypeFlags::Draggable) {
-            switch (current_element->type()) {
-              case TypeId::TextiBox:
-              case TypeId::Box: {
-                auto box = std::dynamic_pointer_cast<UIBox>(current_element);
-                mvwin(box->window, event.y - click_offset.y,
-                      event.x - click_offset.x);
-                break;
-              }
-              default:
-                break;
-            }
-          }
-
+          // if (current_element &&
+          //     current_element->flags & TypeFlags::Draggable) {
+          //   switch (current_element->type()) {
+          //     case TypeId::Box: {
+          //       auto box = std::static_pointer_cast<UIBox>(
+          //           current_element);  // issue :(
+          //       mvwin(box->window, event.y - click_offset.y,
+          //             event.x - click_offset.x);
+          //       break;
+          //     }
+          //     default:
+          //       break;
+          //   }
+          // }
+          //
           if (event.bstate & BUTTON1_PRESSED) {
             events.dispatch("mousedown", m_e);
             for (auto& child : children) {
@@ -307,7 +253,7 @@ class UIContext : public UIElement {
                 case TypeId::TextiBox:
                 case TypeId::Button:
                 case TypeId::Box: {
-                  auto box = std::dynamic_pointer_cast<UIBox>(child);
+                  auto box = std::static_pointer_cast<UIBox>(child);
                   int start_y, start_x;
                   getbegyx(child->window, start_y, start_x);
                   if (event.x >= start_x && event.x <= start_x + box->width &&
@@ -330,46 +276,63 @@ class UIContext : public UIElement {
           }
         }
       }
-      render();
+      render(children);
     }
   }
 
-  void render() override {
+  void add_child(std::shared_ptr<_AbstractUIElement> child) {
+    children.emplace_back(child);
+  }
+
+  void render(std::vector<std::shared_ptr<_AbstractUIElement>> __children) {
     wnoutrefresh(window);
-    for (auto& child : children)
+    for (auto& child : __children) {
+      if (child->composition.size() > 0) {
+        render(child->composition);
+      }
       child->render();
+    }
     doupdate();
   }
-
-  TypeId type() const override { return TypeId::Ctx; };
 };
 
-/**
- * Create a UIButton that auto binds a 'click' event to itself.
- * */
-class UIButton : public UITextiBox {
- public:
-  UIButton() = default;
-
-  template <typename F>
-  UIButton(EventManager* events, std::string text, F&& callback)
-      : UITextiBox(text.length() + 2, 3, 0, 0, false, text, 1, 1) {
-    events->subscribe<UIContext::MouseEvent>(
-        "click", [&](UIContext::MouseEvent e) {
-          if (e.element && e.element->window == window) {
-            callback(e);
-          }
-        });
-  }
-
-  static std::shared_ptr<UIButton> create(
-      EventManager* events,
-      std::string text,
-      std::function<void(UIContext::MouseEvent)> callback = {}) {
-    return std::make_shared<UIButton>(events, text, callback);
-  }
-
-  TypeId type() const override { return TypeId::Button; };
-};
+// /**
+//  * Create a UIButton that auto binds a 'click' event to itself.
+//  * */
+// class UIButton : public UIText, public UIBox {
+//  public:
+//   UIButton() = default;
+//
+//   template <typename F>
+//   UIButton(int x, int y, EventManager* events, std::string text, F&&
+//   callback)
+//       : UIText(text, x, y) {
+//     events->subscribe<UIContext::MouseEvent>(
+//         "click", [&](UIContext::MouseEvent e) {
+//           if (e.element && e.element->window == UIBox::window) {
+//             callback(e);
+//           }
+//         });
+//   }
+//
+//   static std::shared_ptr<UIButton> create(
+//       EventManager* events,
+//       std::string text,
+//       int x,
+//       int y,
+//       std::function<void(UIContext::MouseEvent)> callback = {}) {
+//     return std::make_shared<UIButton>(x, y, events, text, callback);
+//   }
+//
+//   void render() override {
+//     // mvwprintw(window, 0, 0, "%s", text.c_str());
+//     // touchwin(window);
+//     // wnoutrefresh(window);
+//     // UIText::render();
+//     // UIBox::render();
+//   }
+//
+//   TypeId type() const override { return TypeId::Button; };
+// };
 
 #endif
