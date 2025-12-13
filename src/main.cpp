@@ -23,15 +23,15 @@ int main() {
   //       text_label->label = update_stats().c_str();
   //     });
 
-  // ctx->events.subscribe<UIContext::MouseEvent>(
-  //     "mousemove", [&](UIContext::MouseEvent e) {
-  //       oss.str("");
-  //       oss.clear();
-  //       oss << "screen_width: " << ctx->screen_width << "\n ";
-  //       oss << "screen_height: " << ctx->screen_height << "\n ";
-  //       oss << e.x << " " << e.y << '\n';
-  //       textibox->text = oss.str();
-  //     });
+  ctx->events.subscribe<HawkTuahed::MouseEvent>(
+      "mousemove", [&](HawkTuahed::MouseEvent e) {
+        oss.str("");
+        oss.clear();
+        oss << "screen_width: " << ctx->screen_width << "\n";
+        oss << "screen_height: " << ctx->screen_height << "\n";
+        oss << e.x << " " << e.y << '\n';
+        text_label->label = oss.str();
+      });
 
   // ctx->events.subscribe<UIContext::MouseEvent>(
   //     "click", [&](UIContext::MouseEvent e) {
@@ -43,7 +43,9 @@ int main() {
   //       text_label->label = oss.str();
   //     });
 
-  auto box = UIButton::create(&ctx->events, [&](HawkTuahed::MouseEvent e) {});
+  auto box =
+      UIButton::create(&ctx->events, "Quit", 10, 0,
+                       [&](HawkTuahed::MouseEvent e) { ctx->running = false; });
 
   ctx->add_child(box);
   ctx->add_child(text_label);

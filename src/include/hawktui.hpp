@@ -103,11 +103,13 @@ class UIBox : public IUIElement<TypeId::Box> {
     window = newwin(height, width, y, x);
   }
 
-  void resize() { wresize(window, height, width); };
+  void adjust() {
+    wresize(window, height, width);
+    mvwin(window, x, y);
+  };
 
   void render() override {
     box(window, 0, 0);
-    touchwin(window);
     wnoutrefresh(window);
   }
 };
@@ -120,36 +122,49 @@ class UIText : public IUIElement<TypeId::Text> {
   std::string label;
   size_t width;
   size_t height;
-  int x;
-  int y;
+  int text_x;
+  int text_y;
+  int win_x;
+  int win_y;
 
   UIText() = default;
 
-  UIText(std::string label) : label(label) {
+  UIText(std::string label, int win_x = 0, int win_y = 0)
+      : label(label), win_x(win_x), win_y(win_y) {
     width = label.length() + 2;
     height = 3;
-    x = 1;
-    y = 1;
-    window = newwin(height, width, this->y, this->x);
+    window = newwin(height, width, this->win_y, this->win_x);
   }
 
-  UIText(std::string label, int w, int h, int xpos, int ypos)
-      : label(label), width(w), height(h), x(xpos), y(ypos) {
-    window = newwin(height, width, this->y, this->x);
+  UIText(std::string label, int w, int h, int win_x, int win_y)
+      : label(label), width(w), height(h), win_x(win_x), win_y(win_y) {
+    window = newwin(height, width, this->win_y, this->win_x);
   }
 
-  UIText(WINDOW* window, std::string label) : IUIElement(window), label(label) {
-    width = 10;
-    height = 5;
-    x = 0;
-    y = 0;
+  UIText(WINDOW* window, std::string label)
+      : IUIElement(window), label(label) {}
+
+  /**
+   * Generate a perfectly padded text window
+   * */
+  void auto_size() {
+    width = label.length() + 2;
+    height = 3;
+    text_x = 1;
+    text_y = 1;
+    adjust();
   }
 
-  void resize() { wresize(window, height, width); };
+  /**
+   * Updates the current window's x, y, width, and height
+   * */
+  void adjust() {
+    wresize(window, height, width);
+    mvwin(window, win_y, win_x);
+  };
 
   void render() override {
-    mvwprintw(window, 0, 0, "%s", label.c_str());
-    touchwin(window);
+    mvwprintw(window, text_y, text_x, "%s", label.c_str());
     wnoutrefresh(window);
   }
 };
@@ -177,8 +192,6 @@ class HawkTuahed {
   } m_e;
 
   HawkTuahed() {
-    // #ifdef NDEBUG
-    // #endif
     window = initscr();
     // start_color();
     getmaxyx(window, screen_height, screen_width);
@@ -298,10 +311,16 @@ class HawkTuahed {
 class UIButton : public IUIElement<TypeId::Button> {
  public:
   template <typename F>
-  UIButton(EventManager* events, F&& callback) {
+  UIButton(EventManager* events,
+           std::string label,
+           int x,
+           int y,
+           F&& callback) {
     auto box = std::make_shared<UIBox>();
-    box->resize();
-    auto text = std::make_shared<UIText>(box->window, "Quit");
+    auto text = std::make_shared<UIText>(box->window, label);
+    text->win_x = x;
+    text->win_y = y;
+    text->auto_size();
     composition.emplace_back(box);
     composition.emplace_back(text);
     this->window = box->window;
@@ -317,8 +336,11 @@ class UIButton : public IUIElement<TypeId::Button> {
 
   static std::shared_ptr<UIButton> create(
       EventManager* events,
+      std::string label,
+      int x,
+      int y,
       std::function<void(HawkTuahed::MouseEvent)> callback = {}) {
-    return std::make_shared<UIButton>(events, callback);
+    return std::make_shared<UIButton>(events, label, x, y, callback);
   }
 
   void render() {};
