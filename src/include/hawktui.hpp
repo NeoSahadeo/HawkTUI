@@ -218,7 +218,7 @@ class HawkTuahed {
   }
 
   void tua() {
-    render(children);
+    dirty_render(children);
     int c;
     MEVENT event;
     Coords click_offset{};
@@ -254,7 +254,7 @@ class HawkTuahed {
           }
         }
       }
-      render(children);
+      dirty_render(children);
     }
   }
 
@@ -293,14 +293,25 @@ class HawkTuahed {
     }
   }
 
+  /**
+   * Recursive render callback to mark all windows as dirty.
+   * */
   void render(std::vector<std::shared_ptr<_AbstractUIElement>> __children) {
-    wnoutrefresh(window);
     for (auto& child : __children) {
       if (child->composition.size() > 0) {
         render(child->composition);
       }
       child->render();
     }
+  }
+
+  /**
+   * Batches render calls to reduce flickers
+   * */
+  void dirty_render(
+      std::vector<std::shared_ptr<_AbstractUIElement>> __children) {
+    wnoutrefresh(window);
+    render(children);
     doupdate();
   }
 };
