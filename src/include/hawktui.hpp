@@ -9,15 +9,15 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include "log.hpp"
 #ifndef HAWKTUI_H
 #define HAWKTUI_H
 
 enum class TypeId { None, Box, Text, TextiBox, Button, Label };
 
 enum class TypeFlags : uint8_t {
-  None = 0,
-  Draggable = 1,
+  None,
+  Draggable,
+  Editable,
 };
 
 class EventManager {
@@ -338,7 +338,6 @@ class UIButton : public IUIElement<TypeId::Button> {
 
     events->subscribe<HawkTuahed::MouseEvent>(
         "click", [&](HawkTuahed::MouseEvent e) {
-          logToFile(this->window);
           if (e.element && e.element->window == this->window) {
             callback(e);
           }
