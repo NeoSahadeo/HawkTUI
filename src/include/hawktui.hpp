@@ -1,4 +1,6 @@
 #include <ncurses.h>
+#include <unistd.h>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -9,10 +11,11 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include "log.hpp"
 #ifndef HAWKTUI_H
 #define HAWKTUI_H
 
-enum class TypeId { None, Box, Text, TextiBox, Button, Label };
+enum class TypeId { None, Box, Text, Button, Line, Curve, Node };
 
 enum class TypeFlags : uint8_t {
   None,
@@ -64,7 +67,7 @@ class EventManager {
 class _AbstractUIElement {
  public:
   ~_AbstractUIElement() = default;
-  _AbstractUIElement() = default;
+  _AbstractUIElement() { delwin(window); };
 
   std::vector<std::shared_ptr<_AbstractUIElement>> composition{};
   TypeFlags flags{TypeFlags::None};
@@ -80,6 +83,61 @@ class IUIElement : public _AbstractUIElement {
   IUIElement() = default;
   IUIElement(WINDOW* window) { this->window = window; }
   TypeId type() { return T; }
+};
+
+/**
+ * Draws a line from point a to point b
+ * */
+class UILine : public IUIElement<TypeId::Line> {
+ public:
+  UILine(int x1, int y1, int x2, int y2) {
+    int x_delta = std::abs(x2 - x1);
+    int y_delta = std::abs(y2 - y1);
+    window = newwin(y_delta, x_delta, 0, 0);
+
+    if (y_delta == 0) {
+      mvwhline(window, y1, x1, '-', x_delta);
+      return;
+    }
+    if (x_delta == 0) {
+      mvwvline(window, y1, x1, '|', y_delta);
+      return;
+    }
+
+    // Direction
+    char y_dir = y2 > y1 ? 1 : -1;  // -1 left, 1 right
+    char x_dir = x2 > x1 ? 1 : -1;  // -1 up, 1 down
+
+    // THE THREE HORSEMEN
+    bool same = x_delta == y_delta;  // special case
+
+    bool bias = x_delta >
+                y_delta;  // determine which side is longer. true x>y, false y>x
+
+    int ratio = same   ? 1
+                : bias ? x_delta / y_delta
+                       : y_delta / x_delta;  // calculate the ratio of loops
+
+    int y_track{y1};
+    int x_track{x1};
+    for (int __c{}; __c < (bias ? x_delta / ratio : y_delta / ratio); __c++) {
+      // logToFile(std::to_string(__c));
+      if (bias) {
+        mvwhline(window, y_track, x_track, '-', ratio);
+        x_track += x_dir * ratio + (x_dir > 0 ? -1 : 1);
+        y_track += y_dir;
+        mvwvline(window, y_track, x_track, '|', 1);
+        x_track += x_dir;
+      } else {
+        mvwvline(window, y_track, x_track, '|', ratio);
+        y_track += y_dir * ratio;
+        mvwhline(window, y_track, x_track, '-', 1);
+        x_track += x_dir;
+      }
+    }
+  };
+
+  void render() override { wnoutrefresh(window); }
 };
 
 /**

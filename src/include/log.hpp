@@ -2,8 +2,9 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <string>
 
-void logToFile(void* message) {
+void logToFile(std::string message) {
   std::ofstream logFile("app.log", std::ios::app);
   if (logFile.is_open()) {
     auto now = std::chrono::system_clock::now();
