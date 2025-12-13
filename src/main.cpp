@@ -6,7 +6,7 @@
 #define NDEBUG
 
 int main() {
-  UIContext* ctx = new UIContext();
+  HawkTuahed* ctx = new HawkTuahed();
   std::ostringstream oss;
   auto update_stats = [&]() -> std::string {
     oss.str("");
@@ -43,11 +43,11 @@ int main() {
   //       text_label->label = oss.str();
   //     });
 
-  auto box = UIButton::create(&ctx->events, [&](UIContext::MouseEvent e) {});
+  auto box = UIButton::create(&ctx->events, [&](HawkTuahed::MouseEvent e) {});
 
   ctx->add_child(box);
   ctx->add_child(text_label);
-  ctx->start();
+  ctx->tua();
   delete ctx;
   return 0;
 }

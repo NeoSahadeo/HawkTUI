@@ -157,7 +157,7 @@ class UIText : public IUIElement<TypeId::Text> {
 /**
  * UI Context class that sets up the main window and pointer events
  * */
-class UIContext {
+class HawkTuahed {
  public:
   WINDOW* window;
   mmask_t oldmask;
@@ -176,7 +176,7 @@ class UIContext {
     std::shared_ptr<_AbstractUIElement> element;
   } m_e;
 
-  UIContext() {
+  HawkTuahed() {
     // #ifdef NDEBUG
     // #endif
     window = initscr();
@@ -195,7 +195,7 @@ class UIContext {
     running = true;
   }
 
-  ~UIContext() {
+  ~HawkTuahed() {
     printf("\033[?1003l\n");
     curs_set(1);
     mousemask(oldmask, NULL);
@@ -204,7 +204,7 @@ class UIContext {
     children.clear();
   }
 
-  void start() {
+  void tua() {
     render(children);
     int c;
     MEVENT event;
@@ -306,8 +306,8 @@ class UIButton : public IUIElement<TypeId::Button> {
     composition.emplace_back(text);
     this->window = box->window;
 
-    events->subscribe<UIContext::MouseEvent>(
-        "click", [&](UIContext::MouseEvent e) {
+    events->subscribe<HawkTuahed::MouseEvent>(
+        "click", [&](HawkTuahed::MouseEvent e) {
           logToFile(this->window);
           if (e.element && e.element->window == this->window) {
             callback(e);
@@ -317,7 +317,7 @@ class UIButton : public IUIElement<TypeId::Button> {
 
   static std::shared_ptr<UIButton> create(
       EventManager* events,
-      std::function<void(UIContext::MouseEvent)> callback = {}) {
+      std::function<void(HawkTuahed::MouseEvent)> callback = {}) {
     return std::make_shared<UIButton>(events, callback);
   }
 
