@@ -15,6 +15,9 @@
 #ifndef HAWKTUI_H
 #define HAWKTUI_H
 
+#define M_PI_2x 6.283185307
+#define M_PI_3rd 4.71238898
+
 enum class TypeId { None, Box, Text, Button, Line, Curve, Node };
 
 enum class TypeFlags : uint8_t {
@@ -89,55 +92,92 @@ class IUIElement : public _AbstractUIElement {
  * Draws a line from point a to point b
  * */
 class UILine : public IUIElement<TypeId::Line> {
- public:
-  UILine(int x1, int y1, int x2, int y2) {
-    int x_delta = std::abs(x2 - x1);
-    int y_delta = std::abs(y2 - y1);
-    window = newwin(y_delta, x_delta, 0, 0);
+  typedef struct Coords {
+    int x{};
+    int y{};
+  } Coords;
 
+  int eq_line(int x) { return gradient * (x - p1.x) + p1.y; }
+
+ public:
+  int x_delta;
+  int y_delta;
+  int width;
+  int height;
+  double gradient;
+  Coords p1, p2;
+  UILine(int x1, int y1, int x2, int y2) {
+    p1 = {.x = x1, .y = y1};
+    p2 = {.x = x2, .y = y2};
+    x_delta = x2 - x1;
+    y_delta = y2 - y1;
+    if (x2 - x1 != 0) {
+      gradient = (double)(y2 - y1) / (double)(x2 - x1);
+    } else {
+      gradient = 0;
+    }
+    width = std::abs(x_delta) + 1;
+    height = std::abs(y_delta) + 1;
+    window = newwin(width, height, 0, 0);
+    // wbkgd(window, COLOR_PAIR(1));
+  }
+
+  void render() override {
     if (y_delta == 0) {
-      mvwhline(window, y1, x1, '-', x_delta);
+      mvwhline(window, p1.y, p1.x, '-', width);
+      wnoutrefresh(window);
       return;
     }
     if (x_delta == 0) {
-      mvwvline(window, y1, x1, '|', y_delta);
+      mvwvline(window, p1.y, p1.x, '|', height);
+      wnoutrefresh(window);
       return;
     }
 
-    // Direction
-    char y_dir = y2 > y1 ? 1 : -1;  // -1 left, 1 right
-    char x_dir = x2 > x1 ? 1 : -1;  // -1 up, 1 down
+    /*  Quadrant layout
+     *  0,2 = '/'
+     *  1,3 = '\'
+     *
+     *       |
+     *    1  |  0
+     *       |
+     *  -----|------
+     *       |
+     *    2  |  3
+     *       |
+     * */
 
-    // THE THREE HORSEMEN
-    bool same = x_delta == y_delta;  // special case
-
-    bool bias = x_delta >
-                y_delta;  // determine which side is longer. true x>y, false y>x
-
-    int ratio = same   ? 1
-                : bias ? x_delta / y_delta
-                       : y_delta / x_delta;  // calculate the ratio of loops
-
-    int y_track{y1};
-    int x_track{x1};
-    for (int __c{}; __c < (bias ? x_delta / ratio : y_delta / ratio); __c++) {
-      // logToFile(std::to_string(__c));
-      if (bias) {
-        mvwhline(window, y_track, x_track, '-', ratio);
-        x_track += x_dir * ratio + (x_dir > 0 ? -1 : 1);
-        y_track += y_dir;
-        mvwvline(window, y_track, x_track, '|', 1);
-        x_track += x_dir;
-      } else {
-        mvwvline(window, y_track, x_track, '|', ratio);
-        y_track += y_dir * ratio;
-        mvwhline(window, y_track, x_track, '-', 1);
-        x_track += x_dir;
-      }
+    Coords norm_p2 = {.x = p2.x, .y = p2.y};
+    if (p1.x != 0) {
+      norm_p2.x = p2.x - p1.x;
     }
-  };
+    if (p1.y != 0) {
+      norm_p2.y = p2.y - p1.y;
+    }
 
-  void render() override { wnoutrefresh(window); }
+    char x_dir = norm_p2.x > 0 ? 1 : -1;
+    char y_dir = norm_p2.y > 0 ? 1 : -1;
+    // logToFile("---> " + std::to_string(norm_p2.x) + ", " +
+    //           std::to_string(norm_p2.y));
+
+    char quadrant;
+    if (x_dir == 1 && y_dir == 1) {
+      quadrant = '\\';
+    } else if (x_dir == -1 && y_dir == 1) {
+      quadrant = '/';
+    } else if (x_dir == -1 && y_dir == -1) {
+      quadrant = '\\';
+    } else if (x_dir == 1 && y_dir == -1) {
+      quadrant = '/';
+    }
+
+    // logToFile("Quad: " + std::to_string(quadrant));
+    for (int i{p1.x}; i != p2.x; i += x_dir) {
+      // logToFile(std::to_string(i) + ", " + std::to_string(eq_line(i)));
+      mvwprintw(window, eq_line(i), i, "%c", quadrant);
+    }
+    wnoutrefresh(window);
+  }
 };
 
 /**
@@ -252,6 +292,7 @@ class HawkTuahed {
   HawkTuahed() {
     window = initscr();
     // start_color();
+    init_pair(1, COLOR_WHITE, COLOR_BLUE);
     getmaxyx(window, screen_height, screen_width);
     cbreak();
     noecho();

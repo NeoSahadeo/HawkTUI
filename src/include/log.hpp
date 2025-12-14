@@ -14,3 +14,12 @@ void logToFile(std::string message) {
     logFile.close();
   }
 }
+void logToFile(double x) {
+  logToFile(std::to_string(x));
+}
+void logToFile(char x) {
+  logToFile(std::to_string(x));
+}
+void logToFile(int x) {
+  logToFile(std::to_string(x));
+}
