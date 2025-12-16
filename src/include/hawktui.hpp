@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <functional>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -17,6 +18,10 @@
 
 #define M_PI_2x 6.283185307
 #define M_PI_3rd 4.71238898
+
+typedef struct Coords {
+  int x, y;
+} Coords;
 
 enum class TypeId { None, Box, Text, Button, Line, Curve, Node };
 
@@ -67,12 +72,12 @@ class EventManager {
   }
 };
 
-class _AbstractUIElement {
+class AbstractUIElement {
  public:
-  ~_AbstractUIElement() = default;
-  _AbstractUIElement() { delwin(window); };
+  AbstractUIElement() = default;
+  virtual ~AbstractUIElement() = default;
 
-  std::vector<std::shared_ptr<_AbstractUIElement>> composition{};
+  std::vector<std::shared_ptr<AbstractUIElement>> composition{};
   TypeFlags flags{TypeFlags::None};
   WINDOW* window{};
 
@@ -81,7 +86,7 @@ class _AbstractUIElement {
 };
 
 template <TypeId T>
-class IUIElement : public _AbstractUIElement {
+class IUIElement : public AbstractUIElement {
  public:
   IUIElement() = default;
   IUIElement(WINDOW* window) { this->window = window; }
@@ -203,7 +208,7 @@ class UIBox : public IUIElement<TypeId::Box> {
 
   void adjust() {
     wresize(window, height, width);
-    mvwin(window, x, y);
+    mvwin(window, y, x);
   };
 
   void render() override {
@@ -267,153 +272,343 @@ class UIText : public IUIElement<TypeId::Text> {
   }
 };
 
-/**
- * UI Context class that sets up the main window and pointer events
+/** @brief RAII wrapper for ncurses screen context with UI element hierarchy and
+ * event management
+ *
+ * Initializes ncurses with mouse support, manages screen dimensions, and owns a
+ * tree of UI elements.
+ *
+ * Handles lifecycle (initscr/endwin), resize events, and event dispatching via
+ * EventManager.
+ *
+ * @note Non-copyable/moveable to ensure exclusive ownership of ncurses state.
  * */
-class HawkTuahed {
+class ScreenContext {
+ private:
+  WINDOW* _window;
+  mmask_t _oldmask;
+  int _screen_width;
+  int _screen_height;
+  bool _running;
+  EventManager _events;
+  std::vector<std::unique_ptr<AbstractUIElement>> _children;
+
+  void configure_ncurses();
+  void cleanup_ncurses();
+
  public:
-  WINDOW* window;
-  mmask_t oldmask;
-  int screen_width;
-  int screen_height;
-  EventManager events;
-  bool running;
-  struct Coords {
-    int x, y;
-  };
-  std::vector<std::shared_ptr<_AbstractUIElement>> children;
+  ScreenContext();
+  ~ScreenContext();
 
-  struct MouseEvent : EventManager::Event {
-    int x;
-    int y;
-    std::shared_ptr<_AbstractUIElement> element;
-  } m_e;
-
-  HawkTuahed() {
-    window = initscr();
-    // start_color();
-    init_pair(1, COLOR_WHITE, COLOR_BLUE);
-    getmaxyx(window, screen_height, screen_width);
-    cbreak();
-    noecho();
-    keypad(stdscr, TRUE);
-    mmask_t mask, oldmask;
-    mask = ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION;
-    curs_set(0);
-    mouseinterval(0);
-    mousemask(mask, &oldmask);
-    oldmask = oldmask;
-    printf("\033[?1003h\n");
-    running = true;
-  }
-
-  ~HawkTuahed() {
-    printf("\033[?1003l\n");
-    curs_set(1);
-    mousemask(oldmask, NULL);
-    delwin(window);
-    endwin();
-    children.clear();
-  }
-
-  void tua() {
-    dirty_render(children);
-    int c;
-    MEVENT event;
-    Coords click_offset{};
-
-    std::shared_ptr<_AbstractUIElement> current_element;
-    c = wgetch(window);
-    while (running) {
-      c = wgetch(window);
-      if (c == 'q') {
-        running = false;
-        break;
-      }
-      touchwin(stdscr);
-      wnoutrefresh(window);
-      if (c == KEY_RESIZE) {
-        getmaxyx(window, screen_height, screen_width);
-        events.dispatch("resize");
-      }
-
-      if (c == KEY_MOUSE) {
-        while (getmouse(&event) == OK) {
-          m_e.x = event.x;
-          m_e.y = event.y;
-          events.dispatch("mousemove", m_e);
-
-          if (event.bstate & BUTTON1_PRESSED) {
-            handle_click(event, click_offset, current_element, children);
-            events.dispatch("mousedown", m_e);
-          } else if (event.bstate & BUTTON1_RELEASED) {
-            events.dispatch("mouseup", m_e);
-            events.dispatch("click", m_e);
-            current_element.reset();
-          }
-        }
-      }
-      dirty_render(children);
-    }
-  }
-
-  void add_child(std::shared_ptr<_AbstractUIElement> child) {
-    children.emplace_back(child);
-  }
-
-  void handle_click(
-      MEVENT event,
-      Coords click_offset,
-      std::shared_ptr<_AbstractUIElement> current_element,
-      std::vector<std::shared_ptr<_AbstractUIElement>> __children) {
-    for (auto& child : __children) {
-      if (child->composition.size() > 0) {
-        handle_click(event, click_offset, current_element, child->composition);
-      };
-
-      switch (child->type()) {
-        case TypeId::Box: {
-          auto box = std::static_pointer_cast<UIBox>(child);
-          int start_y, start_x;
-          getbegyx(child->window, start_y, start_x);
-          if (event.x >= start_x && event.x <= start_x + box->width &&
-              event.y >= start_y && event.y <= start_y + box->height) {
-            // logToFile(box->window);
-            click_offset.x = event.x - start_x;
-            click_offset.y = event.y - start_y;
-            current_element = child;
-            m_e.element = child;
-          }
-          break;
-        }
-        default:
-          break;
-      };
-    }
-  }
+  /** Disallows move/copy semantics */
+  ScreenContext(const ScreenContext&) = delete;
+  ScreenContext& operator=(const ScreenContext&) = delete;
+  ScreenContext(ScreenContext&&) = delete;
+  ScreenContext& operator=(ScreenContext&&) = delete;
 
   /**
-   * Recursive render callback to mark all windows as dirty.
+   * @brief Returns the current screen width in characters.
+   * @return Cached width from last ncurses query.
+   */
+  int get_width() const { return _screen_width; }
+
+  /**
+   * @brief Returns the current screen height in characters.
+   * @return Cached height from last ncurses query.
+   */
+  int get_height() const { return _screen_height; }
+
+  /**
+   * @brief Returns the raw ncurses window handle.
+   * @return Pointer to underlying WINDOW (do not delete).
+   * @warning Direct ncurses usage bypasses RAII safety.
+   */
+  WINDOW* get_window() const { return _window; }
+
+  /**
+   * @brief Returns const reference to child UI elements.
+   * @return Read-only view of the element hierarchy.
+   * @note Do not modify or store the returned reference.
+   */
+  const std::vector<std::unique_ptr<AbstractUIElement>>& get_children() const {
+    return _children;
+  }
+
+  /** @brief Updates the cached screen dimensions from the ncurses
+   * window.
+   * @note Called automatically by the resize event */
+  void update_dimensions();
+
+  /** @brief Sets the running state of the screen context to false. */
+  void stop() { _running = false; }
+
+  /** @brief Queries the running state of the screen context. */
+  bool is_running() const { return _running; }
+
+  /** @brief Adds child UI element to this context's hierarchy.
+   * @param child Unique ownership of element to add (moved into storage).
+   * @warning Child ownership transfers to ScreenContext. Do not reference after
+   * calling.
    * */
-  void render(std::vector<std::shared_ptr<_AbstractUIElement>> __children) {
-    for (auto& child : __children) {
+  void add_child(std::unique_ptr<AbstractUIElement> child);
+
+  /** @brief Deletes child UI element from this context's hierarchy.
+   * @param child Raw UI Element pointer (from any_child.get()).
+   * @note Safe if not found. Compares object addresses only.
+   * */
+  void del_child(AbstractUIElement* child);
+
+  /** @brief Clears the children UI hierarchy from this context.
+   *
+   * @note Safe to call at any point. Destroys all owned children.
+   * */
+  void clear_children();
+
+  /** @brief Returns reference to the event manager for this context.
+   * @return Mutable reference to EventManager for event subscription/dispatch
+   * */
+  EventManager& event_manager() { return _events; }
+};
+
+void ScreenContext::add_child(std::unique_ptr<AbstractUIElement> child) {
+  if (!child)
+    return;
+  _children.emplace_back(std::move(child));
+}
+
+void ScreenContext::del_child(AbstractUIElement* child) {
+  if (!child)
+    return;
+  auto it =
+      std::find_if(_children.begin(), _children.end(),
+                   [&child](const auto& ptr) { return ptr.get() == child; });
+  if (it != _children.end()) {
+    _children.erase(it);
+  }
+}
+
+ScreenContext::ScreenContext()
+    : _window(nullptr),
+      _oldmask(0),
+      _screen_width(0),
+      _screen_height(0),
+      _running(false) {
+  configure_ncurses();
+}
+
+ScreenContext::~ScreenContext() {
+  cleanup_ncurses();
+}
+
+void ScreenContext::clear_children() {
+  _children.clear();
+}
+
+void ScreenContext::configure_ncurses() {
+  _window = initscr();
+  if (!_window) {
+    throw std::runtime_error("Failed to initialize ncurses window");
+  }
+
+  getmaxyx(_window, _screen_height, _screen_width);
+
+  cbreak();
+  noecho();
+  keypad(stdscr, TRUE);
+  mmask_t mask;
+  mask = ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION;
+  curs_set(0);
+  mouseinterval(0);
+  mousemask(mask, &_oldmask);
+  printf("\033[?1003h\n");
+  fflush(stdout);
+  _running = true;
+}
+
+void ScreenContext::cleanup_ncurses() {
+  printf("\033[?1003l\n");
+  fflush(stdout);
+  curs_set(1);
+  mousemask(_oldmask, nullptr);
+  if (_window) {
+    delwin(_window);
+    _window = nullptr;
+  }
+  endwin();
+}
+
+void ScreenContext::update_dimensions() {
+  if (!_window) {
+    return;
+  }
+  getmaxyx(_window, _screen_height, _screen_width);
+}
+
+class RegisteredEvents {
+ public:
+  struct MouseEvent : EventManager::Event {
+    int x{};
+    int y{};
+    std::shared_ptr<AbstractUIElement> element{};
+    Coords click_offset{};
+  } mouse_event;
+};
+
+/** @brief Internal renderer supporting shared_ptr and unique ptr hierarchies.
+ * @note Private implementation. Use UIContext::start() instead.
+ * */
+class Renderer {
+ public:
+  /** @brief Recursively renders shared_ptr UI element hierarchy.
+   * @param children Shared ownership hierarchy to render.
+   * @note Internal. Use UIContext::start() instead to avoid flickering and perf
+   * overhead.
+   * */
+  void render(std::vector<std::shared_ptr<AbstractUIElement>> children) {
+    render_impl(children);
+  };
+
+  /** @brief Recursively renders unique_ptr UI element hierarchy.
+   * @param children Unique hierarchy to render.
+   * @note Internal. Use UIContext::start() instead to avoid flickering and perf
+   * overhead.
+   * */
+  void render(const std::vector<std::unique_ptr<AbstractUIElement>>& children) {
+    render_impl(children);
+  };
+
+ private:
+  template <class C>
+  void render_impl(const C& children) {
+    for (auto& child : children) {
       if (child->composition.size() > 0) {
         render(child->composition);
       }
       child->render();
     }
   }
-
-  /**
-   * Batches render calls to reduce flickers
-   * */
-  void dirty_render(
-      std::vector<std::shared_ptr<_AbstractUIElement>> __children) {
-    wnoutrefresh(window);
-    render(children);
-    doupdate();
-  }
 };
+
+/** @brief RAII UI context that renders child hierarchy and dispatches ncurses
+ * events.
+ *
+ * Extends ScreenContext with automatic child rendering and MEVENT dispatching
+ * to EventManager. Inherits RegisteredEvents for event subscription.
+ * */
+class UIContext : public ScreenContext,
+                  public Renderer,
+                  public RegisteredEvents {
+ public:
+  UIContext() = default;
+  ~UIContext() = default;
+
+  /** @brief Starts the main ncurses event loop with child rendering and event
+   * dispatch.
+   * @note Blocks until stop() is called or window is destroyed.
+   * */
+  void start();
+
+  /** @brief Detects mouse interaction on elements and dispatches mousedown,
+   * mouseup, and click events.
+   * @param children Shared ownership hierarchy to test for click hits.
+   * @note Internal. Automatically called from unique_ptr-based handle_click().
+   * */
+  void handle_click(std::vector<std::shared_ptr<AbstractUIElement>> children);
+
+  /** @brief Checks if child has a shared_ptr UI hierarchy and forwards handling
+   * to the shared_ptr handle_click().
+   * @param children Unique ownership hierarchy to test for shared_ptr
+   * hierarchy.
+   * @note Internal. Automatically called from start().
+   * */
+  void handle_click(
+      const std::vector<std::unique_ptr<AbstractUIElement>>& children);
+
+  /** @brief Wraps render() with a single wnoutrefresh() + doupdate() for
+   * efficiency and to avoid flickering.
+   * @note Internal method. Use start() instead to insure children to exist.
+   * */
+  void batch_render();
+};
+
+void UIContext::start() {
+  batch_render();
+
+  WINDOW* win = get_window();
+  MEVENT event;
+  int c{};
+  while (is_running()) {
+    c = wgetch(win);
+    if (c == 'q') {
+      stop();
+      break;
+    }
+    touchwin(stdscr);
+    wnoutrefresh(win);
+    if (c == KEY_RESIZE) {
+      update_dimensions();
+      event_manager().dispatch("resize");
+    }
+
+    if (c == KEY_MOUSE) {
+      while (getmouse(&event) == OK) {
+        mouse_event.x = event.x;
+        mouse_event.y = event.y;
+        event_manager().dispatch("mousemove", mouse_event);
+        if (event.bstate & BUTTON1_PRESSED) {
+          handle_click(get_children());
+          event_manager().dispatch("mousedown", mouse_event);
+        } else if (event.bstate & BUTTON1_RELEASED) {
+          event_manager().dispatch("mouseup", mouse_event);
+          event_manager().dispatch("click", mouse_event);
+          mouse_event.element.reset();
+        }
+      }
+    }
+    batch_render();
+  }
+}
+
+void UIContext::batch_render() {
+  wnoutrefresh(get_window());
+  render(get_children());
+  doupdate();
+}
+
+void UIContext::handle_click(
+    const std::vector<std::unique_ptr<AbstractUIElement>>& _children) {
+  for (auto& child : _children) {
+    if (child->composition.size() > 0) {
+      UIContext::handle_click(child->composition);
+    };
+  }
+}
+
+void UIContext::handle_click(
+    std::vector<std::shared_ptr<AbstractUIElement>> _children) {
+  for (auto& child : _children) {
+    if (child->composition.size() > 0) {
+      handle_click(child->composition);
+    };
+    switch (child->type()) {
+      case TypeId::Box: {
+        auto box = std::static_pointer_cast<UIBox>(child);
+        int start_y, start_x;
+        getbegyx(child->window, start_y, start_x);
+        if (mouse_event.x >= start_x && mouse_event.x <= start_x + box->width &&
+            mouse_event.y >= start_y &&
+            mouse_event.y <= start_y + box->height) {
+          mouse_event.click_offset.x = mouse_event.x - start_x;
+          mouse_event.click_offset.y = mouse_event.y - start_y;
+          mouse_event.element = child;
+        }
+        break;
+      }
+      default:
+        break;
+    };
+  }
+}
 
 /**
  * Create a button
@@ -435,8 +630,8 @@ class UIButton : public IUIElement<TypeId::Button> {
     composition.emplace_back(text);
     this->window = box->window;
 
-    events->subscribe<HawkTuahed::MouseEvent>(
-        "click", [&](HawkTuahed::MouseEvent e) {
+    events->subscribe<UIContext::MouseEvent>(
+        "click", [&](UIContext::MouseEvent e) {
           if (e.element && e.element->window == this->window) {
             callback(e);
           }
@@ -448,7 +643,7 @@ class UIButton : public IUIElement<TypeId::Button> {
       std::string label,
       int x,
       int y,
-      std::function<void(HawkTuahed::MouseEvent)> callback = {}) {
+      std::function<void(UIContext::MouseEvent)> callback = {}) {
     return std::make_shared<UIButton>(events, label, x, y, callback);
   }
 
