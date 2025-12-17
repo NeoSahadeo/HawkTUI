@@ -10,7 +10,7 @@ OBJS        := $(SRCS:$(SRC_DIR)/%.cpp=$(BUILD_DIR)/%.o)
 DEPS        := $(OBJS:.o=.d)
 
 CC          := clang++
-CFLAGS      := -O0 -g -std=c++23
+CFLAGS      := -g -std=c++23
 CPPFLAGS    := -MMD -MP -I include
 LDLIBS      := $(addprefix -l,$(LIBS))
 

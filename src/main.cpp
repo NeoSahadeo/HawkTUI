@@ -5,6 +5,10 @@
 #include "include/hawktui.hpp"
 #define NDEBUG
 
+static void mouse_handler(RegisteredEvents::MouseEvent* e) {
+  e->ctx->stop();
+}
+
 int main() {
   UIContext* ctx = new UIContext();
   std::ostringstream oss;
@@ -50,7 +54,20 @@ int main() {
 
   // auto line = std::make_shared<UILine>(-3, 4, -5, 0);
   // auto line = std::make_shared<UILine>(0, 0, 10, -10);
-  // ctx->add_child(box);
+  auto box = std::make_unique<UIBox>();
+  ctx->add_child(std::move(box));
+
+  auto g_mouse_callback =
+      +[](const RegisteredEvents::MouseEvent& e) { e.ctx->stop(); };
+
+  // auto callback = +[](const RegisteredEvents::MouseEvent& e) { e.ctx->stop();
+  // };
+
+  ctx->event_manager().subscribe<RegisteredEvents::MouseEvent>(
+      "mousemove", g_mouse_callback);
+  ctx->event_manager().unsubscribe<RegisteredEvents::MouseEvent>(
+      "mousemove", g_mouse_callback);
+
   // ctx->add_child(line);
   // ctx->add_child(text_label);
   ctx->start();

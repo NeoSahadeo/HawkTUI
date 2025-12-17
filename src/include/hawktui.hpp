@@ -31,47 +31,100 @@ enum class TypeFlags : uint8_t {
   Editable,
 };
 
+/** @brief Manages event dispatch, subcription, and unsubscribe methods for any
+ * instance of the class.
+ * */
 class EventManager {
  public:
+  /** @brief Event base for any user-defined events.
+   * @warning Custom events MUST inherit from Event to receive dispatch `data`.
+   * */
   struct Event {};
 
-  std::unordered_map<std::string, std::vector<std::function<void(Event&)>>>
-      handlers;
+ private:
+  /** @brief Stores callback function and unique identifier for event tracking.
+   */
+  struct CallbackMeta {
+    std::function<void(Event&)> func;
+    std::uintptr_t id;
+  };
 
-  /**
-   * Subscribe a callback to an event
+  std::unordered_map<std::string, std::vector<CallbackMeta>> _handlers;
+
+ public:
+  /** @brief Subscribes a callback to an event name.
+   * @tparam EventT Expected event type (must match dispatched events).
+   * @param event Event name string to subscribe to.
+   * @param callback Reference to a function to invoke on dispatch.
+   * @note Callback recieves EventManager::Event struct during dispatch.
    * */
-  template <typename EventT, typename F>
-  void subscribe(const std::string& event, F&& callback) {
-    handlers[event].emplace_back(
-        [cb = std::forward<F>(callback)](const auto& e) mutable {
-          cb(static_cast<const EventT&>(e));
-        });
+  template <typename EventT>
+  void subscribe(const std::string& event, void (*cb)(const EventT&)) {
+    _handlers[event].emplace_back(CallbackMeta{
+        .func =
+            [cb](const auto& e) mutable { cb(static_cast<const EventT&>(e)); },
+        .id = reinterpret_cast<std::uintptr_t>(cb)});
   }
 
-  /**
-   * Dispatch an event with a lvalue
+  /** @brief Dispatches an event to all subscribed callbacks.
+   * @param event Event string to dispatch to.
+   * @param data Event payload passed to matching callbacks.
+   * @note Only callbacks subscribed to `event` receive the `data` parameter.
    * */
   void dispatch(const std::string& event, Event& data) {
-    if (auto callbacks = handlers.find(event); callbacks != handlers.end()) {
-      for (auto& f : callbacks->second) {
-        f(data);
+    if (auto callbacks = _handlers.find(event); callbacks != _handlers.end()) {
+      for (auto& vec : callbacks->second) {
+        vec.func(data);
       }
     }
   }
 
-  /**
-   * Dispatch an event with an rvalue
+  /** @brief Dispatches an event to all subscribed callbacks.
+   * @param event Event string to dispatch to.
+   * @param data Optional Event payload passed to matching callbacks (default:
+   * empty).
+   * @note Only callbacks subscribed to `event` receive the `data` parameter.
    * */
   void dispatch(const std::string& event, Event&& data = Event{}) {
-    if (auto callbacks = handlers.find(event); callbacks != handlers.end()) {
-      for (auto& f : callbacks->second) {
-        f(data);
+    if (auto callbacks = _handlers.find(event); callbacks != _handlers.end()) {
+      for (auto& vec : callbacks->second) {
+        vec.func(data);
       }
     }
+  }
+
+  /** @brief Unsubscribes a callback from an event name.
+   * @tparam EventT Expected event type (must match dispatched events).
+   * @param event Event string name
+   * @param callback Callback to remove (must match original subcription).
+   * @note Safe if event/callback is not found.
+   * */
+  template <typename EventT>
+  void unsubscribe(const std::string& event, void (*cb)(const EventT&)) {
+    auto callbacks = _handlers.find(event);
+    if (callbacks == _handlers.end() || callbacks->second.empty())
+      return;
+
+    auto& vecs = callbacks->second;
+    vecs.erase(std::remove_if(vecs.begin(), vecs.end(),
+                              [&cb](const CallbackMeta& v) {
+                                return v.id ==
+                                       reinterpret_cast<std::uintptr_t>(cb);
+                              }),
+               vecs.end());
   }
 };
 
+/** @brief Abstract base for all UI elements with nested composition support.
+ *
+ * Subclasses must implement render() and type().
+ * Supports hierarchical UI trees
+ * via composition member.
+ * Defaults:
+ *  empty composition
+ *  TypeFlags::None
+ *  null window
+ * */
 class AbstractUIElement {
  public:
   AbstractUIElement() = default;
@@ -79,12 +132,25 @@ class AbstractUIElement {
 
   std::vector<std::shared_ptr<AbstractUIElement>> composition{};
   TypeFlags flags{TypeFlags::None};
-  WINDOW* window{};
+  WINDOW* window{nullptr};
 
+  /** @brief Calls ncurses functions to draw UI element to its parent
+   * ScreenContext window.
+   * @note Automatically invoked by UIContext::render() during batch rendering.
+   */
   virtual void render() = 0;
+
+  /**@brief Returns this UI element's TypeId.
+   * @warning TypeId must be registered with TypeId::register() before use.
+   * @note Automatically invoked by UIContext::handle_click() during mouse
+   * events.
+   * */
   virtual TypeId type() = 0;
 };
 
+/** @brief Templated UI element base with shared window support and default
+ * type().
+ * */
 template <TypeId T>
 class IUIElement : public AbstractUIElement {
  public:
@@ -306,14 +372,12 @@ class ScreenContext {
   ScreenContext(ScreenContext&&) = delete;
   ScreenContext& operator=(ScreenContext&&) = delete;
 
-  /**
-   * @brief Returns the current screen width in characters.
+  /** @brief Returns the current screen width in characters.
    * @return Cached width from last ncurses query.
    */
   int get_width() const { return _screen_width; }
 
-  /**
-   * @brief Returns the current screen height in characters.
+  /** @brief Returns the current screen height in characters.
    * @return Cached height from last ncurses query.
    */
   int get_height() const { return _screen_height; }
@@ -325,8 +389,7 @@ class ScreenContext {
    */
   WINDOW* get_window() const { return _window; }
 
-  /**
-   * @brief Returns const reference to child UI elements.
+  /** @brief Returns const reference to child UI elements.
    * @return Read-only view of the element hierarchy.
    * @note Do not modify or store the returned reference.
    */
@@ -359,7 +422,6 @@ class ScreenContext {
   void del_child(AbstractUIElement* child);
 
   /** @brief Clears the children UI hierarchy from this context.
-   *
    * @note Safe to call at any point. Destroys all owned children.
    * */
   void clear_children();
@@ -444,6 +506,8 @@ void ScreenContext::update_dimensions() {
   getmaxyx(_window, _screen_height, _screen_width);
 }
 
+class UIContext;
+
 class RegisteredEvents {
  public:
   struct MouseEvent : EventManager::Event {
@@ -451,6 +515,7 @@ class RegisteredEvents {
     int y{};
     std::shared_ptr<AbstractUIElement> element{};
     Coords click_offset{};
+    UIContext* ctx;
   } mouse_event;
 };
 
@@ -526,7 +591,7 @@ class UIContext : public ScreenContext,
 
   /** @brief Wraps render() with a single wnoutrefresh() + doupdate() for
    * efficiency and to avoid flickering.
-   * @note Internal method. Use start() instead to insure children to exist.
+   * @note Internal method. Use start() instead to insure children exist.
    * */
   void batch_render();
 };
@@ -537,6 +602,7 @@ void UIContext::start() {
   WINDOW* win = get_window();
   MEVENT event;
   int c{};
+  mouse_event.ctx = this;
   while (is_running()) {
     c = wgetch(win);
     if (c == 'q') {
@@ -630,12 +696,12 @@ class UIButton : public IUIElement<TypeId::Button> {
     composition.emplace_back(text);
     this->window = box->window;
 
-    events->subscribe<UIContext::MouseEvent>(
-        "click", [&](UIContext::MouseEvent e) {
-          if (e.element && e.element->window == this->window) {
-            callback(e);
-          }
-        });
+    // events->subscribe<UIContext::MouseEvent>(
+    //     "click", [&](UIContext::MouseEvent e) {
+    //       if (e.element && e.element->window == this->window) {
+    //         callback(e);
+    //       }
+    //     });
   }
 
   static std::shared_ptr<UIButton> create(
