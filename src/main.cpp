@@ -5,10 +5,6 @@
 #include "include/hawktui.hpp"
 #define NDEBUG
 
-static void mouse_handler(RegisteredEvents::MouseEvent* e) {
-  e->ctx->stop();
-}
-
 int main() {
   UIContext* ctx = new UIContext();
   std::ostringstream oss;
@@ -57,16 +53,10 @@ int main() {
   auto box = std::make_unique<UIBox>();
   ctx->add_child(std::move(box));
 
-  auto g_mouse_callback =
-      +[](const RegisteredEvents::MouseEvent& e) { e.ctx->stop(); };
+  auto g_mouse_callback = [](Event::MouseEvent::Data d) { d.ctx->stop(); };
+  ctx->mouse_event.add(Event::Type::Click, g_mouse_callback);
 
-  // auto callback = +[](const RegisteredEvents::MouseEvent& e) { e.ctx->stop();
-  // };
-
-  ctx->event_manager().subscribe<RegisteredEvents::MouseEvent>(
-      "mousemove", g_mouse_callback);
-  ctx->event_manager().unsubscribe<RegisteredEvents::MouseEvent>(
-      "mousemove", g_mouse_callback);
+  ctx->observer().sub(Event::Type::Click, ctx->mouse_event);
 
   // ctx->add_child(line);
   // ctx->add_child(text_label);

@@ -23,6 +23,9 @@ typedef struct Coords {
   int x, y;
 } Coords;
 
+class UIContext;
+class AbstractUIElement;
+
 enum class TypeId { None, Box, Text, Button, Line, Curve, Node };
 
 enum class TypeFlags : uint8_t {
@@ -31,89 +34,100 @@ enum class TypeFlags : uint8_t {
   Editable,
 };
 
-/** @brief Manages event dispatch, subcription, and unsubscribe methods for any
- * instance of the class.
- * */
-class EventManager {
+namespace Event {
+enum class Type {
+  Click,
+  Mousemove,
+  Mouseup,
+  Mousedown,
+  Keydown,
+  Keyup,
+  Keypress,
+  Resize,
+};
+
+class EventListener {
  public:
-  /** @brief Event base for any user-defined events.
-   * @warning Custom events MUST inherit from Event to receive dispatch `data`.
-   * */
-  struct Event {};
+  uintptr_t id;
+  EventListener();
+  ~EventListener() = default;
+  virtual void update(Type event) = 0;
+};
+
+EventListener::EventListener() {
+  id = reinterpret_cast<uintptr_t>(this);
+}
+
+class Observer {
+ private:
+  std::unordered_map<Type, std::vector<EventListener*>> _handlers{};
+
+ public:
+  void sub(Type event, EventListener& listener);
+  void unsub(Type event, EventListener& listener);
+  void notify(Type event);
+};
+
+void Observer::sub(Type event, EventListener& listener) {
+  _handlers[event].emplace_back(&listener);
+}
+
+void Observer::notify(Type event) {
+  for (auto&& vec : _handlers[event]) {
+    vec->update(event);
+  }
+}
+
+void Observer::unsub(Type event, EventListener& listener) {
+  if (_handlers[event].empty())
+    return;
+
+  std::erase_if(_handlers[event],
+                [&](EventListener* e) { return e->id == listener.id; });
+}
+
+class MouseEvent : public EventListener {
+ public:
+  struct Data {
+    int x{0};
+    int y{0};
+    int offset_x{0};
+    int offset_y{0};
+    std::shared_ptr<AbstractUIElement> element;
+    UIContext* ctx;
+  };
+  Data data;
 
  private:
-  /** @brief Stores callback function and unique identifier for event tracking.
-   */
-  struct CallbackMeta {
-    std::function<void(Event&)> func;
+  struct MouseMeta {
+    std::function<void(Data)> func;
     std::uintptr_t id;
+    Type type;
   };
-
-  std::unordered_map<std::string, std::vector<CallbackMeta>> _handlers;
+  std::vector<MouseMeta> _calls;
 
  public:
-  /** @brief Subscribes a callback to an event name.
-   * @tparam EventT Expected event type (must match dispatched events).
-   * @param event Event name string to subscribe to.
-   * @param callback Reference to a function to invoke on dispatch.
-   * @note Callback recieves EventManager::Event struct during dispatch.
-   * */
-  template <typename EventT>
-  void subscribe(const std::string& event, void (*cb)(const EventT&)) {
-    _handlers[event].emplace_back(CallbackMeta{
-        .func =
-            [cb](const auto& e) mutable { cb(static_cast<const EventT&>(e)); },
-        .id = reinterpret_cast<std::uintptr_t>(cb)});
+  template <typename F>
+  auto add(Type event_type, F&& callback) {
+    auto ptr = reinterpret_cast<std::uintptr_t>(static_cast<void*>(&callback));
+    _calls.emplace_back(MouseMeta{std::forward<F>(callback), ptr, event_type});
+    return ptr;
   }
-
-  /** @brief Dispatches an event to all subscribed callbacks.
-   * @param event Event string to dispatch to.
-   * @param data Event payload passed to matching callbacks.
-   * @note Only callbacks subscribed to `event` receive the `data` parameter.
-   * */
-  void dispatch(const std::string& event, Event& data) {
-    if (auto callbacks = _handlers.find(event); callbacks != _handlers.end()) {
-      for (auto& vec : callbacks->second) {
-        vec.func(data);
+  template <typename F>
+  void remove(F&& callback) {
+    auto ptr = reinterpret_cast<std::uintptr_t>(static_cast<void*>(&callback));
+    std::erase_if(_calls, [&ptr](MouseMeta m) { return m.id == ptr; });
+  }
+  void update(Type event) override {
+    for (auto&& x : _calls) {
+      if (x.type == event) {
+        x.func(data);
       }
     }
-  }
-
-  /** @brief Dispatches an event to all subscribed callbacks.
-   * @param event Event string to dispatch to.
-   * @param data Optional Event payload passed to matching callbacks (default:
-   * empty).
-   * @note Only callbacks subscribed to `event` receive the `data` parameter.
-   * */
-  void dispatch(const std::string& event, Event&& data = Event{}) {
-    if (auto callbacks = _handlers.find(event); callbacks != _handlers.end()) {
-      for (auto& vec : callbacks->second) {
-        vec.func(data);
-      }
-    }
-  }
-
-  /** @brief Unsubscribes a callback from an event name.
-   * @tparam EventT Expected event type (must match dispatched events).
-   * @param event Event string name
-   * @param callback Callback to remove (must match original subcription).
-   * @note Safe if event/callback is not found.
-   * */
-  template <typename EventT>
-  void unsubscribe(const std::string& event, void (*cb)(const EventT&)) {
-    auto callbacks = _handlers.find(event);
-    if (callbacks == _handlers.end() || callbacks->second.empty())
-      return;
-
-    auto& vecs = callbacks->second;
-    vecs.erase(std::remove_if(vecs.begin(), vecs.end(),
-                              [&cb](const CallbackMeta& v) {
-                                return v.id ==
-                                       reinterpret_cast<std::uintptr_t>(cb);
-                              }),
-               vecs.end());
   }
 };
+
+};  // namespace Event
 
 /** @brief Abstract base for all UI elements with nested composition support.
  *
@@ -345,7 +359,7 @@ class UIText : public IUIElement<TypeId::Text> {
  * tree of UI elements.
  *
  * Handles lifecycle (initscr/endwin), resize events, and event dispatching via
- * EventManager.
+ * Event::Observer.
  *
  * @note Non-copyable/moveable to ensure exclusive ownership of ncurses state.
  * */
@@ -356,7 +370,7 @@ class ScreenContext {
   int _screen_width;
   int _screen_height;
   bool _running;
-  EventManager _events;
+  Event::Observer _observer;
   std::vector<std::unique_ptr<AbstractUIElement>> _children;
 
   void configure_ncurses();
@@ -429,7 +443,7 @@ class ScreenContext {
   /** @brief Returns reference to the event manager for this context.
    * @return Mutable reference to EventManager for event subscription/dispatch
    * */
-  EventManager& event_manager() { return _events; }
+  Event::Observer& observer() { return _observer; }
 };
 
 void ScreenContext::add_child(std::unique_ptr<AbstractUIElement> child) {
@@ -476,7 +490,7 @@ void ScreenContext::configure_ncurses() {
 
   cbreak();
   noecho();
-  keypad(stdscr, TRUE);
+  keypad(_window, TRUE);
   mmask_t mask;
   mask = ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION;
   curs_set(0);
@@ -505,19 +519,6 @@ void ScreenContext::update_dimensions() {
   }
   getmaxyx(_window, _screen_height, _screen_width);
 }
-
-class UIContext;
-
-class RegisteredEvents {
- public:
-  struct MouseEvent : EventManager::Event {
-    int x{};
-    int y{};
-    std::shared_ptr<AbstractUIElement> element{};
-    Coords click_offset{};
-    UIContext* ctx;
-  } mouse_event;
-};
 
 /** @brief Internal renderer supporting shared_ptr and unique ptr hierarchies.
  * @note Private implementation. Use UIContext::start() instead.
@@ -560,10 +561,9 @@ class Renderer {
  * Extends ScreenContext with automatic child rendering and MEVENT dispatching
  * to EventManager. Inherits RegisteredEvents for event subscription.
  * */
-class UIContext : public ScreenContext,
-                  public Renderer,
-                  public RegisteredEvents {
+class UIContext : public ScreenContext, public Renderer {
  public:
+  Event::MouseEvent mouse_event{Event::MouseEvent()};
   UIContext() = default;
   ~UIContext() = default;
 
@@ -602,7 +602,7 @@ void UIContext::start() {
   WINDOW* win = get_window();
   MEVENT event;
   int c{};
-  mouse_event.ctx = this;
+  mouse_event.data.ctx = this;
   while (is_running()) {
     c = wgetch(win);
     if (c == 'q') {
@@ -613,21 +613,21 @@ void UIContext::start() {
     wnoutrefresh(win);
     if (c == KEY_RESIZE) {
       update_dimensions();
-      event_manager().dispatch("resize");
+      observer().notify(Event::Type::Resize);
     }
 
     if (c == KEY_MOUSE) {
       while (getmouse(&event) == OK) {
-        mouse_event.x = event.x;
-        mouse_event.y = event.y;
-        event_manager().dispatch("mousemove", mouse_event);
+        mouse_event.data.x = event.x;
+        mouse_event.data.y = event.y;
+        observer().notify(Event::Type::Mousemove);
         if (event.bstate & BUTTON1_PRESSED) {
           handle_click(get_children());
-          event_manager().dispatch("mousedown", mouse_event);
+          observer().notify(Event::Type::Mousedown);
         } else if (event.bstate & BUTTON1_RELEASED) {
-          event_manager().dispatch("mouseup", mouse_event);
-          event_manager().dispatch("click", mouse_event);
-          mouse_event.element.reset();
+          observer().notify(Event::Type::Mouseup);
+          observer().notify(Event::Type::Click);
+          mouse_event.data.element.reset();
         }
       }
     }
@@ -661,12 +661,13 @@ void UIContext::handle_click(
         auto box = std::static_pointer_cast<UIBox>(child);
         int start_y, start_x;
         getbegyx(child->window, start_y, start_x);
-        if (mouse_event.x >= start_x && mouse_event.x <= start_x + box->width &&
-            mouse_event.y >= start_y &&
-            mouse_event.y <= start_y + box->height) {
-          mouse_event.click_offset.x = mouse_event.x - start_x;
-          mouse_event.click_offset.y = mouse_event.y - start_y;
-          mouse_event.element = child;
+        if (mouse_event.data.x >= start_x &&
+            mouse_event.data.x <= start_x + box->width &&
+            mouse_event.data.y >= start_y &&
+            mouse_event.data.y <= start_y + box->height) {
+          mouse_event.data.offset_x = mouse_event.data.x - start_x;
+          mouse_event.data.offset_y = mouse_event.data.y - start_y;
+          mouse_event.data.element = child;
         }
         break;
       }
@@ -679,41 +680,43 @@ void UIContext::handle_click(
 /**
  * Create a button
  * */
-class UIButton : public IUIElement<TypeId::Button> {
- public:
-  template <typename F>
-  UIButton(EventManager* events,
-           std::string label,
-           int x,
-           int y,
-           F&& callback) {
-    auto box = std::make_shared<UIBox>();
-    auto text = std::make_shared<UIText>(box->window, label);
-    text->win_x = x;
-    text->win_y = y;
-    text->auto_size();
-    composition.emplace_back(box);
-    composition.emplace_back(text);
-    this->window = box->window;
-
-    // events->subscribe<UIContext::MouseEvent>(
-    //     "click", [&](UIContext::MouseEvent e) {
-    //       if (e.element && e.element->window == this->window) {
-    //         callback(e);
-    //       }
-    //     });
-  }
-
-  static std::shared_ptr<UIButton> create(
-      EventManager* events,
-      std::string label,
-      int x,
-      int y,
-      std::function<void(UIContext::MouseEvent)> callback = {}) {
-    return std::make_shared<UIButton>(events, label, x, y, callback);
-  }
-
-  void render() {};
-};
+// class UIButton : public IUIElement<TypeId::Button> {
+//  public:
+//   template <typename F>
+//   UIButton(EventManager* events,
+//            std::string label,
+//            int x,
+//            int y,
+//            F&& callback) {
+//     auto box = std::make_shared<UIBox>();
+//     auto text = std::make_shared<UIText>(box->window, label);
+//     text->win_x = x;
+//     text->win_y = y;
+//     text->auto_size();
+//     composition.emplace_back(box);
+//     composition.emplace_back(text);
+//     this->window = box->window;
+//
+//     events->subscribe<RegisteredEvents::MouseEvent>(
+//         "click", [&](const RegisteredEvents::MouseEvent& v) {});
+//     // events->subscribe<RegisteredEvents::MouseEvent>(
+//     //     "click", [](RegisteredEvents::MouseEvent e) {
+//     //       // if (e.element && e.element->window == this->window) {
+//     //       //   callback(e);
+//     //       // }
+//     //     });
+//   }
+//
+//   static std::shared_ptr<UIButton> create(
+//       Event::Observer* events,
+//       std::string label,
+//       int x,
+//       int y,
+//       std::function<void(UIContext::MouseEvent)> callback = {}) {
+//     return std::make_shared<UIButton>(events, label, x, y, callback);
+//   }
+//
+//   void render() {};
+// };
 
 #endif
