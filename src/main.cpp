@@ -50,16 +50,25 @@ int main() {
 
   // auto line = std::make_shared<UILine>(-3, 4, -5, 0);
   // auto line = std::make_shared<UILine>(0, 0, 10, -10);
-  auto box = std::make_unique<UIBox>();
-  ctx->add_child(std::move(box));
+  //
 
-  auto g_mouse_callback = [](Event::MouseEvent::Data d) { d.ctx->stop(); };
-  ctx->mouse_event.add(Event::Type::Click, g_mouse_callback);
+  // auto g_mouse_callback = [](Event::MouseEvent::Data d) { d.ctx->stop(); };
+  // auto button =
+  //     UIButton::create(&ctx->mouse_event, "Quit", 0, 0, g_mouse_callback);
+
+  // ctx->add_child(std::move(button));
+
+  // auto box = std::make_unique<UIBox>();
+  // ctx->add_child(std::move(box));
+
+  // auto g_mouse_callback = [](Event::MouseEvent::Data d) { d.ctx->stop(); };
+  // ctx->mouse_event.add(Event::Type::Click, g_mouse_callback);
+
+  auto box = UIBox::create(0, 0, 5, 10);
 
   ctx->observer().sub(Event::Type::Click, ctx->mouse_event);
 
-  // ctx->add_child(line);
-  // ctx->add_child(text_label);
+  ctx->add_child(std::move(box));
   ctx->start();
   delete ctx;
   return 0;

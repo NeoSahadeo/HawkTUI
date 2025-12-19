@@ -96,36 +96,46 @@ class MouseEvent : public EventListener {
     std::shared_ptr<AbstractUIElement> element;
     UIContext* ctx;
   };
-  Data data;
+  Data data{};
 
  private:
-  struct MouseMeta {
+  struct Meta {
     std::function<void(Data)> func;
     std::uintptr_t id;
     Type type;
   };
-  std::vector<MouseMeta> _calls;
+  std::vector<Meta> _calls;
 
  public:
   template <typename F>
-  auto add(Type event_type, F&& callback) {
-    auto ptr = reinterpret_cast<std::uintptr_t>(static_cast<void*>(&callback));
-    _calls.emplace_back(MouseMeta{std::forward<F>(callback), ptr, event_type});
-    return ptr;
-  }
+  auto add(Type event_type, F&& callback);
+
   template <typename F>
-  void remove(F&& callback) {
-    auto ptr = reinterpret_cast<std::uintptr_t>(static_cast<void*>(&callback));
-    std::erase_if(_calls, [&ptr](MouseMeta m) { return m.id == ptr; });
-  }
-  void update(Type event) override {
-    for (auto&& x : _calls) {
-      if (x.type == event) {
-        x.func(data);
-      }
+  void remove(F&& callback);
+
+  void update(Type event) override;
+};
+
+template <typename F>
+auto MouseEvent::add(Event::Type event_type, F&& callback) {
+  auto ptr = reinterpret_cast<std::uintptr_t>(static_cast<void*>(&callback));
+  _calls.emplace_back(Meta{std::forward<F>(callback), ptr, event_type});
+  return ptr;
+}
+
+template <typename F>
+void MouseEvent::remove(F&& callback) {
+  auto ptr = reinterpret_cast<std::uintptr_t>(static_cast<void*>(&callback));
+  std::erase_if(_calls, [&ptr](Meta m) { return m.id == ptr; });
+}
+
+void MouseEvent::update(Type event) {
+  for (auto&& x : _calls) {
+    if (x.type == event) {
+      x.func(data);
     }
   }
-};
+}
 
 };  // namespace Event
 
@@ -265,43 +275,89 @@ class UILine : public IUIElement<TypeId::Line> {
   }
 };
 
-/**
- * Creates a UIBox element - empty box with a border
+/** @brief Primitive box element.
+ * default:
+ *  width 10 chars
+ *  height 10 chars
  * */
 class UIBox : public IUIElement<TypeId::Box> {
- public:
+ private:
   size_t width;
   size_t height;
   int x;
   int y;
 
-  /* Overrides the default window */
-  UIBox(WINDOW* window) : IUIElement(window) {}
-  UIBox(WINDOW* window, int w, int h, int xpos, int ypos)
-      : IUIElement(window), width(w), height(h), x(xpos), y(ypos) {}
+ public:
+  /** @brief Overrides the default window with a user provided window.
+   * @note Allows nested window hierarchies.
+   * */
+  UIBox(WINDOW* window);
+  UIBox(WINDOW* window, int w, int h, int xpos, int ypos);
 
-  UIBox() : UIBox(10, 5, 0, 0) {}
-  UIBox(int w, int h, int xpos, int ypos)
-      : width(w), height(h), x(xpos), y(ypos) {
-    window = newwin(height, width, y, x);
-  }
+  UIBox();
+  UIBox(int w, int h, int xpos, int ypos);
 
-  void adjust() {
-    wresize(window, height, width);
-    mvwin(window, y, x);
-  };
+  /** @brief Returns height of the current window. */
+  int get_height() const { return height; }
 
-  void render() override {
-    box(window, 0, 0);
-    wnoutrefresh(window);
-  }
+  /** @brief Returns width of the current window. */
+  int get_width() const { return width; }
+
+  /** @brief Returns position of the current window.
+   * @return position Coords (x,y).
+   * */
+  Coords get_pos() const { return Coords{x, y}; }
+
+  /**@brief Creates a UI box element and returns it.
+   * @param x Horizontal position
+   * @param y Vertical position
+   * @param height Height of the box
+   * @param width Width of the box
+   * @note All parameters are in characters.
+   * */
+  static std::unique_ptr<UIBox> create(int x,
+                                       int y,
+                                       int height,
+                                       int width,
+                                       WINDOW* window);
+
+  /** @brief Draws a box using ncurses. */
+  void render() override;
 };
+
+UIBox::UIBox(WINDOW* window) : IUIElement(window) {};
+
+UIBox::UIBox(WINDOW* window, int w, int h, int xpos, int ypos)
+    : IUIElement(window), width(w), height(h), x(xpos), y(ypos) {}
+
+UIBox::UIBox() : UIBox(10, 5, 0, 0) {};
+
+UIBox::UIBox(int w, int h, int xpos, int ypos)
+    : width(w), height(h), x(xpos), y(ypos) {
+  window = newwin(height, width, y, x);
+}
+
+std::unique_ptr<UIBox> UIBox::create(int x = 0,
+                                     int y = 0,
+                                     int height = 0,
+                                     int width = 0,
+                                     WINDOW* window = nullptr) {
+  if (window) {
+    return std::make_unique<UIBox>(window, width, height, x, y);
+  }
+  return std::make_unique<UIBox>(width, height, x, y);
+}
+
+void UIBox::render() {
+  box(window, 0, 0);
+  wnoutrefresh(window);
+}
 
 /**
  * Creates a text element
  * */
 class UIText : public IUIElement<TypeId::Text> {
- public:
+ private:
   std::string label;
   size_t width;
   size_t height;
@@ -310,56 +366,75 @@ class UIText : public IUIElement<TypeId::Text> {
   int win_x;
   int win_y;
 
-  UIText() = default;
+ public:
+  UIText(std::string label,
+         int text_x,
+         int text_y,
+         int win_x,
+         int win_y,
+         int width,
+         int height,
+         WINDOW* window);
 
-  UIText(std::string label, int win_x = 0, int win_y = 0)
-      : label(label), win_x(win_x), win_y(win_y) {
-    width = label.length() + 2;
-    height = 3;
-    window = newwin(height, width, this->win_y, this->win_x);
-  }
+  // UIText(std::string label, int win_x, int win_y);
+  //
+  // UIText(std::string label, int w, int h, int win_x, int win_y);
+  //
+  // UIText(WINDOW* window, std::string label);
 
-  UIText(std::string label, int w, int h, int win_x, int win_y)
-      : label(label), width(w), height(h), win_x(win_x), win_y(win_y) {
-    window = newwin(height, width, this->win_y, this->win_x);
-  }
+  std::unique_ptr<UIText> create(int x,
+                                 int y,
+                                 int width,
+                                 int height,
+                                 std::string label,
+                                 WINDOW* window);
 
-  UIText(WINDOW* window, std::string label)
-      : IUIElement(window), label(label) {}
+  std::unique_ptr<UIText> create(int text_x,
+                                 int text_y,
+                                 int win_x,
+                                 int win_y,
+                                 int width,
+                                 int height,
+                                 std::string label,
+                                 WINDOW* window);
 
-  /**
-   * Generate a perfectly padded text window
-   * */
-  void auto_size() {
-    width = label.length() + 2;
-    height = 3;
-    text_x = 1;
-    text_y = 1;
-    adjust();
-  }
-
-  /**
-   * Updates the current window's x, y, width, and height
-   * */
-  void adjust() {
-    wresize(window, height, width);
-    mvwin(window, win_y, win_x);
-  };
-
-  void render() override {
-    mvwprintw(window, text_y, text_x, "%s", label.c_str());
-    wnoutrefresh(window);
-  }
+  void render() override;
 };
 
-/** @brief RAII wrapper for ncurses screen context with UI element hierarchy and
- * event management
+UIText::UIText(std::string label,
+               int text_x,
+               int text_y,
+               int win_x,
+               int win_y,
+               int width,
+               int height,
+               WINDOW* window) {}
+
+void UIText::render() {
+  mvwprintw(window, text_y, text_x, "%s", label.c_str());
+  wnoutrefresh(window);
+}
+
+std::unique_ptr<UIText> UIText::create(int x = 0,
+                                       int y = 0,
+                                       int height = 0,
+                                       int width = 0,
+                                       std::string label = "",
+                                       WINDOW* window = nullptr) {
+  if (window) {
+    return std::make_unique<UIText>(label, x, y, 0, 0, width, height, window);
+  }
+  return std::make_unique<UIText>(label, x, y, 0, 0, width, height);
+}
+
+/** @brief RAII wrapper for ncurses screen context with UI element hierarchy
+ * and event management
  *
- * Initializes ncurses with mouse support, manages screen dimensions, and owns a
- * tree of UI elements.
+ * Initializes ncurses with mouse support, manages screen dimensions, and owns
+ * a tree of UI elements.
  *
- * Handles lifecycle (initscr/endwin), resize events, and event dispatching via
- * Event::Observer.
+ * Handles lifecycle (initscr/endwin), resize events, and event dispatching
+ * via Event::Observer.
  *
  * @note Non-copyable/moveable to ensure exclusive ownership of ncurses state.
  * */
@@ -424,8 +499,8 @@ class ScreenContext {
 
   /** @brief Adds child UI element to this context's hierarchy.
    * @param child Unique ownership of element to add (moved into storage).
-   * @warning Child ownership transfers to ScreenContext. Do not reference after
-   * calling.
+   * @warning Child ownership transfers to ScreenContext. Do not reference
+   * after calling.
    * */
   void add_child(std::unique_ptr<AbstractUIElement> child);
 
@@ -527,8 +602,8 @@ class Renderer {
  public:
   /** @brief Recursively renders shared_ptr UI element hierarchy.
    * @param children Shared ownership hierarchy to render.
-   * @note Internal. Use UIContext::start() instead to avoid flickering and perf
-   * overhead.
+   * @note Internal. Use UIContext::start() instead to avoid flickering and
+   * perf overhead.
    * */
   void render(std::vector<std::shared_ptr<AbstractUIElement>> children) {
     render_impl(children);
@@ -536,8 +611,8 @@ class Renderer {
 
   /** @brief Recursively renders unique_ptr UI element hierarchy.
    * @param children Unique hierarchy to render.
-   * @note Internal. Use UIContext::start() instead to avoid flickering and perf
-   * overhead.
+   * @note Internal. Use UIContext::start() instead to avoid flickering and
+   * perf overhead.
    * */
   void render(const std::vector<std::unique_ptr<AbstractUIElement>>& children) {
     render_impl(children);
@@ -576,12 +651,13 @@ class UIContext : public ScreenContext, public Renderer {
   /** @brief Detects mouse interaction on elements and dispatches mousedown,
    * mouseup, and click events.
    * @param children Shared ownership hierarchy to test for click hits.
-   * @note Internal. Automatically called from unique_ptr-based handle_click().
+   * @note Internal. Automatically called from unique_ptr-based
+   * handle_click().
    * */
   void handle_click(std::vector<std::shared_ptr<AbstractUIElement>> children);
 
-  /** @brief Checks if child has a shared_ptr UI hierarchy and forwards handling
-   * to the shared_ptr handle_click().
+  /** @brief Checks if child has a shared_ptr UI hierarchy and forwards
+   * handling to the shared_ptr handle_click().
    * @param children Unique ownership hierarchy to test for shared_ptr
    * hierarchy.
    * @note Internal. Automatically called from start().
@@ -662,9 +738,9 @@ void UIContext::handle_click(
         int start_y, start_x;
         getbegyx(child->window, start_y, start_x);
         if (mouse_event.data.x >= start_x &&
-            mouse_event.data.x <= start_x + box->width &&
+            mouse_event.data.x <= start_x + box->get_width() &&
             mouse_event.data.y >= start_y &&
-            mouse_event.data.y <= start_y + box->height) {
+            mouse_event.data.y <= start_y + box->get_height()) {
           mouse_event.data.offset_x = mouse_event.data.x - start_x;
           mouse_event.data.offset_y = mouse_event.data.y - start_y;
           mouse_event.data.element = child;
@@ -677,13 +753,13 @@ void UIContext::handle_click(
   }
 }
 
-/**
- * Create a button
- * */
+// /**
+//  * Create a button
+//  * */
 // class UIButton : public IUIElement<TypeId::Button> {
 //  public:
 //   template <typename F>
-//   UIButton(EventManager* events,
+//   UIButton(Event::MouseEvent* event,
 //            std::string label,
 //            int x,
 //            int y,
@@ -697,23 +773,20 @@ void UIContext::handle_click(
 //     composition.emplace_back(text);
 //     this->window = box->window;
 //
-//     events->subscribe<RegisteredEvents::MouseEvent>(
-//         "click", [&](const RegisteredEvents::MouseEvent& v) {});
-//     // events->subscribe<RegisteredEvents::MouseEvent>(
-//     //     "click", [](RegisteredEvents::MouseEvent e) {
-//     //       // if (e.element && e.element->window == this->window) {
-//     //       //   callback(e);
-//     //       // }
-//     //     });
+//     event->add(Event::Type::Click, [&](Event::MouseEvent::Data d) {
+//       if (d.element && d.element->window == this->window) {
+//         callback(d);
+//       }
+//     });
 //   }
 //
-//   static std::shared_ptr<UIButton> create(
-//       Event::Observer* events,
+//   static std::unique_ptr<UIButton> create(
+//       Event::MouseEvent* event,
 //       std::string label,
 //       int x,
 //       int y,
-//       std::function<void(UIContext::MouseEvent)> callback = {}) {
-//     return std::make_shared<UIButton>(events, label, x, y, callback);
+//       std::function<void(Event::MouseEvent::Data)> callback = {}) {
+//     return std::make_unique<UIButton>(event, label, x, y, callback);
 //   }
 //
 //   void render() {};
