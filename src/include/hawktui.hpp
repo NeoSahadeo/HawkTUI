@@ -308,6 +308,18 @@ class UIBox : public IUIElement<TypeId::Box> {
    * */
   Coords get_pos() const { return Coords{x, y}; }
 
+  /** @brief Sets the dimensions of the window and tells the window to resize.
+   * @param w Width in characters.
+   * @param h Height in characters.
+   */
+  void set_dimensions(int w, int h);
+
+  /** @brief Sets the position of the window and tells the window to move.
+   * @param x Horizontal position
+   * @param y Vectical position
+   * */
+  void set_pos(int x, int y);
+
   /**@brief Creates a UI box element and returns it.
    * @param x Horizontal position
    * @param y Vertical position
@@ -335,6 +347,18 @@ UIBox::UIBox() : UIBox(10, 5, 0, 0) {};
 UIBox::UIBox(int w, int h, int xpos, int ypos)
     : width(w), height(h), x(xpos), y(ypos) {
   window = newwin(height, width, y, x);
+}
+
+void UIBox::set_dimensions(int width, int height) {
+  this->width = width;
+  this->height = height;
+  wresize(window, height, width);
+}
+
+void UIBox::set_pos(int x, int y) {
+  this->x = x;
+  this->y = y;
+  mvwin(window, y, x);
 }
 
 std::unique_ptr<UIBox> UIBox::create(int x = 0,
@@ -375,6 +399,14 @@ class UIText : public IUIElement<TypeId::Text> {
          int height,
          std::string label,
          WINDOW* window);
+
+  Coords get_text_pos() const { return {win_x, win_y}; };
+
+  Coords get_window_pos() const { return {win_x, win_y}; };
+
+  int get_height() const { return height; };
+
+  int get_width() const { return width; };
 
   static std::unique_ptr<UIText> create(int x,
                                         int y,
@@ -804,43 +836,56 @@ void UIContext::handle_click(
   }
 }
 
-// /**
-//  * Create a button
-//  * */
-// class UIButton : public IUIElement<TypeId::Button> {
-//  public:
-//   template <typename F>
-//   UIButton(Event::MouseEvent* event,
-//            std::string label,
-//            int x,
-//            int y,
-//            F&& callback) {
-//     auto box = std::make_shared<UIBox>();
-//     auto text = std::make_shared<UIText>(box->window, label);
-//     text->win_x = x;
-//     text->win_y = y;
-//     text->auto_size();
-//     composition.emplace_back(box);
-//     composition.emplace_back(text);
-//     this->window = box->window;
-//
-//     event->add(Event::Type::Click, [&](Event::MouseEvent::Data d) {
-//       if (d.element && d.element->window == this->window) {
-//         callback(d);
-//       }
-//     });
-//   }
-//
-//   static std::unique_ptr<UIButton> create(
-//       Event::MouseEvent* event,
-//       std::string label,
-//       int x,
-//       int y,
-//       std::function<void(Event::MouseEvent::Data)> callback = {}) {
-//     return std::make_unique<UIButton>(event, label, x, y, callback);
-//   }
-//
-//   void render() {};
-// };
+/**
+ * Create a button
+ * */
+class UIButton : public IUIElement<TypeId::Button> {
+ public:
+  template <typename F>
+  UIButton(Event::MouseEvent* event,
+           std::string label,
+           int x,
+           int y,
+           F&& callback);
+
+  static std::unique_ptr<UIButton> create(
+      Event::MouseEvent* event,
+      std::string label,
+      int x,
+      int y,
+      std::function<void(Event::MouseEvent::Data)> callback);
+
+  void render() {};
+};
+
+template <typename F>
+UIButton::UIButton(Event::MouseEvent* event,
+                   std::string label,
+                   int x,
+                   int y,
+                   F&& callback) {
+  auto box = UIBox::create();
+  auto text = UIText::create(x, y, label, box->window);
+  box->set_dimensions(text->get_width(), text->get_height());
+  this->window = box->window;
+
+  composition.emplace_back(std::move(box));
+  composition.emplace_back(std::move(text));
+
+  event->add(Event::Type::Click, [&](Event::MouseEvent::Data d) {
+    if (d.element && d.element->window == this->window) {
+      callback(d);
+    }
+  });
+}
+
+std::unique_ptr<UIButton> UIButton::create(
+    Event::MouseEvent* event,
+    std::string label,
+    int x,
+    int y,
+    std::function<void(Event::MouseEvent::Data)> callback = {}) {
+  return std::make_unique<UIButton>(event, label, x, y, callback);
+}
 
 #endif

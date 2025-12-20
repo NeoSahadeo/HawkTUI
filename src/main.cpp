@@ -52,9 +52,9 @@ int main() {
   // auto line = std::make_shared<UILine>(0, 0, 10, -10);
   //
 
-  // auto g_mouse_callback = [](Event::MouseEvent::Data d) { d.ctx->stop(); };
-  // auto button =
-  //     UIButton::create(&ctx->mouse_event, "Quit", 0, 0, g_mouse_callback);
+  auto g_mouse_callback = [](Event::MouseEvent::Data d) { d.ctx->stop(); };
+  auto button = UIButton::create(&ctx->mouse_event, "Quit",
+                                 ctx->get_width() - 6, 0, g_mouse_callback);
 
   // ctx->add_child(std::move(button));
 
@@ -64,13 +64,14 @@ int main() {
   // auto g_mouse_callback = [](Event::MouseEvent::Data d) { d.ctx->stop(); };
   // ctx->mouse_event.add(Event::Type::Click, g_mouse_callback);
 
-  auto box = UIBox::create(3, 0, 5, 10);
-  auto text = UIText::create(10, 0, "Quit", box->window);
+  auto box = UIBox::create();
+  auto text = UIText::create(20, 10, "Quit", box->window);
 
   ctx->observer().sub(Event::Type::Click, ctx->mouse_event);
 
-  ctx->add_child(std::move(box));
-  ctx->add_child(std::move(text));
+  ctx->add_child(std::move(button));
+  // ctx->add_child(std::move(box));
+  // ctx->add_child(std::move(text));
   ctx->start();
   delete ctx;
   return 0;
