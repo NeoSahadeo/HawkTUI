@@ -64,11 +64,13 @@ int main() {
   // auto g_mouse_callback = [](Event::MouseEvent::Data d) { d.ctx->stop(); };
   // ctx->mouse_event.add(Event::Type::Click, g_mouse_callback);
 
-  auto box = UIBox::create(0, 0, 5, 10);
+  auto box = UIBox::create(3, 0, 5, 10);
+  auto text = UIText::create(10, 0, "Quit", box->window);
 
   ctx->observer().sub(Event::Type::Click, ctx->mouse_event);
 
   ctx->add_child(std::move(box));
+  ctx->add_child(std::move(text));
   ctx->start();
   delete ctx;
   return 0;

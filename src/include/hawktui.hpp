@@ -339,8 +339,8 @@ UIBox::UIBox(int w, int h, int xpos, int ypos)
 
 std::unique_ptr<UIBox> UIBox::create(int x = 0,
                                      int y = 0,
-                                     int height = 0,
                                      int width = 0,
+                                     int height = 0,
                                      WINDOW* window = nullptr) {
   if (window) {
     return std::make_unique<UIBox>(window, width, height, x, y);
@@ -367,65 +367,116 @@ class UIText : public IUIElement<TypeId::Text> {
   int win_y;
 
  public:
-  UIText(std::string label,
-         int text_x,
+  UIText(int text_x,
          int text_y,
          int win_x,
          int win_y,
          int width,
          int height,
+         std::string label,
          WINDOW* window);
 
-  // UIText(std::string label, int win_x, int win_y);
-  //
-  // UIText(std::string label, int w, int h, int win_x, int win_y);
-  //
-  // UIText(WINDOW* window, std::string label);
+  static std::unique_ptr<UIText> create(int x,
+                                        int y,
+                                        std::string label,
+                                        WINDOW* window);
 
-  std::unique_ptr<UIText> create(int x,
-                                 int y,
-                                 int width,
-                                 int height,
-                                 std::string label,
-                                 WINDOW* window);
+  static std::unique_ptr<UIText> create(int x,
+                                        int y,
+                                        int width,
+                                        int height,
+                                        std::string label,
+                                        WINDOW* window);
 
-  std::unique_ptr<UIText> create(int text_x,
-                                 int text_y,
-                                 int win_x,
-                                 int win_y,
-                                 int width,
-                                 int height,
-                                 std::string label,
-                                 WINDOW* window);
+  static std::unique_ptr<UIText> create(int text_x,
+                                        int text_y,
+                                        int win_x,
+                                        int win_y,
+                                        int width,
+                                        int height,
+                                        std::string label,
+                                        WINDOW* window);
 
   void render() override;
 };
 
-UIText::UIText(std::string label,
-               int text_x,
+UIText::UIText(int text_x,
                int text_y,
                int win_x,
                int win_y,
                int width,
                int height,
-               WINDOW* window) {}
+               std::string label,
+               WINDOW* window)
+    : text_x(text_x),
+      text_y(text_y),
+      win_x(win_x),
+      win_y(win_y),
+      width(width),
+      height(height),
+      label(label) {
+  if (window) {
+    this->window = window;
+    wresize(this->window, height, width);
+    mvwin(this->window, win_y, win_x);
+  } else {
+    this->window = newwin(height, width, win_y, win_y);
+  }
+}
 
 void UIText::render() {
   mvwprintw(window, text_y, text_x, "%s", label.c_str());
   wnoutrefresh(window);
 }
 
-std::unique_ptr<UIText> UIText::create(int x = 0,
-                                       int y = 0,
-                                       int height = 0,
-                                       int width = 0,
+std::unique_ptr<UIText> _create_uitext_primitive(int text_x,
+                                                 int text_y,
+                                                 int win_x,
+                                                 int win_y,
+                                                 std::string label,
+                                                 int width = -1,
+                                                 int height = -1,
+                                                 WINDOW* window = nullptr) {
+  // center the text if no width & height is specified
+  if (width == -1) {
+    width = label.length() + 2;
+    text_x = 1;
+  }
+  if (height == -1) {
+    height = 3;
+    text_y = 1;
+  }
+  return std::make_unique<UIText>(text_x, text_y, win_x, win_y, width, height,
+                                  label, window);
+}
+
+std::unique_ptr<UIText> UIText::create(int x,
+                                       int y,
                                        std::string label = "",
                                        WINDOW* window = nullptr) {
-  if (window) {
-    return std::make_unique<UIText>(label, x, y, 0, 0, width, height, window);
-  }
-  return std::make_unique<UIText>(label, x, y, 0, 0, width, height);
+  return _create_uitext_primitive(0, 0, x, y, label, -1, -1, window);
 }
+
+std::unique_ptr<UIText> UIText::create(int x,
+                                       int y,
+                                       int width,
+                                       int height,
+                                       std::string label = "",
+                                       WINDOW* window = nullptr) {
+  return _create_uitext_primitive(0, 0, x, y, label, width, height, window);
+}
+
+std::unique_ptr<UIText> create(int text_x,
+                               int text_y,
+                               int win_x,
+                               int win_y,
+                               int width,
+                               int height,
+                               std::string label,
+                               WINDOW* window) {
+  return _create_uitext_primitive(text_x, text_y, win_x, win_y, label, width,
+                                  height, window);
+};
 
 /** @brief RAII wrapper for ncurses screen context with UI element hierarchy
  * and event management
