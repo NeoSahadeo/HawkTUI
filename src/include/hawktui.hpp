@@ -377,8 +377,12 @@ void UIBox::render() {
   wnoutrefresh(window);
 }
 
-/**
- * Creates a text element
+/** @brief UI Text element.
+ * @note Text elements have a width, height (both are values for the window)
+ * A text position, a window position, and label content.
+ * @note Use UIText::create over directly intializing the class.
+ * @note UIText::create will automatically generate the appropriate text UI
+ * element for a given label.
  * */
 class UIText : public IUIElement<TypeId::Text> {
  private:
@@ -391,6 +395,7 @@ class UIText : public IUIElement<TypeId::Text> {
   int win_y;
 
  public:
+  /**@brief Default constructor*/
   UIText(int text_x,
          int text_y,
          int win_x,
@@ -399,20 +404,38 @@ class UIText : public IUIElement<TypeId::Text> {
          int height,
          std::string label,
          WINDOW* window);
-
+  /**@brief Returns the x and y position of the text inside the current window.
+   */
   Coords get_text_pos() const { return {win_x, win_y}; };
 
+  /**@brief Returns the x and y position of the current window.*/
   Coords get_window_pos() const { return {win_x, win_y}; };
 
+  /**@brief Returns the height of the window.*/
   int get_height() const { return height; };
 
+  /**@brief Returns the width of the window.*/
   int get_width() const { return width; };
 
+  /**@brief Creates an UI text element.
+   * @param x Horizontal position of window.
+   * @param y Vectical position of window.
+   * @param label String that is rendered.
+   * @param window Optional window override.
+   * */
   static std::unique_ptr<UIText> create(int x,
                                         int y,
                                         std::string label,
                                         WINDOW* window);
 
+  /**@brief Creates an UI text element.
+   * @param x Horizontal position of window.
+   * @param y Vectical position of window.
+   * @param width Width of the window in characters.
+   * @param height Height of the window in characters.
+   * @param label String that is rendered.
+   * @param window Optional window override.
+   * */
   static std::unique_ptr<UIText> create(int x,
                                         int y,
                                         int width,
@@ -420,6 +443,16 @@ class UIText : public IUIElement<TypeId::Text> {
                                         std::string label,
                                         WINDOW* window);
 
+  /**@brief Creates an UI text element.
+   * @param text_x Horizontal position of the text relative to this window.
+   * @param text_y Vectical position of the text relative to this window.
+   * @param win_x Horizontal position of window
+   * @param win_y Vectical position of window.
+   * @param width Width of the window in characters.
+   * @param height Height of the window in characters.
+   * @param label String that is rendered.
+   * @param window Optional window override.
+   * */
   static std::unique_ptr<UIText> create(int text_x,
                                         int text_y,
                                         int win_x,
@@ -429,6 +462,7 @@ class UIText : public IUIElement<TypeId::Text> {
                                         std::string label,
                                         WINDOW* window);
 
+  /**@brief Render text in this current window at text_x, text_y.*/
   void render() override;
 };
 
@@ -836,18 +870,32 @@ void UIContext::handle_click(
   }
 }
 
-/**
- * Create a button
+/**@brief UI Button element class.
+ * @note Callback methods are very flexible and are allowed to have capture
+ * groups.
+ * @important Callback methods MUST have a parameter of type
+ * Event::MouseEvent::Data.
  * */
 class UIButton : public IUIElement<TypeId::Button> {
  public:
   template <typename F>
+
+  /**@brief Default contructor. */
   UIButton(Event::MouseEvent* event,
            std::string label,
            int x,
            int y,
            F&& callback);
 
+  /**@brief Creates a UI button element.
+   * @param event Event handler context for the button to bind to.
+   * @param label The buttons label.
+   * @param x Horizontal position of the button.
+   * @param y Vectical position of the button.
+   * @param callback Optional callback method.
+   * @important Callback methods MUST have a parameter of type
+   * Event::MouseEvent::Data.
+   * */
   static std::unique_ptr<UIButton> create(
       Event::MouseEvent* event,
       std::string label,
