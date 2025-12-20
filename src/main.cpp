@@ -52,7 +52,7 @@ int main() {
   // auto line = std::make_shared<UILine>(0, 0, 10, -10);
   //
 
-  auto g_mouse_callback = [](Event::MouseEvent::Data d) { d.ctx->stop(); };
+  auto g_mouse_callback = [](Event::MouseData d) { d.ctx->stop(); };
   auto button = UIButton::create(&ctx->mouse_event, "Quit",
                                  ctx->get_width() - 6, 0, g_mouse_callback);
 
@@ -68,6 +68,7 @@ int main() {
   auto text = UIText::create(20, 10, "Quit", box->window);
 
   ctx->observer().sub(Event::Type::Click, ctx->mouse_event);
+  // ctx->observer().sub(Event::Type::Click, ctx->mouse_event);
 
   ctx->add_child(std::move(button));
   // ctx->add_child(std::move(box));

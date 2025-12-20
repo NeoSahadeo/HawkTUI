@@ -1,5 +1,6 @@
 #include <ncurses.h>
 #include <unistd.h>
+#include <any>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -86,21 +87,14 @@ void Observer::unsub(Type event, EventListener& listener) {
                 [&](EventListener* e) { return e->id == listener.id; });
 }
 
-class MouseEvent : public EventListener {
+template <typename C>
+class GenericEvent : public EventListener {
  public:
-  struct Data {
-    int x{0};
-    int y{0};
-    int offset_x{0};
-    int offset_y{0};
-    std::shared_ptr<AbstractUIElement> element;
-    UIContext* ctx;
-  };
-  Data data{};
+  C data;
 
  private:
   struct Meta {
-    std::function<void(Data)> func;
+    std::function<void(C)> func;
     std::uintptr_t id;
     Type type;
   };
@@ -108,35 +102,47 @@ class MouseEvent : public EventListener {
 
  public:
   template <typename F>
-  auto add(Type event_type, F&& callback);
+  auto add(Type event_type, F&& arg);
 
   template <typename F>
-  void remove(F&& callback);
-
+  void remove(F&& arg);
   void update(Type event) override;
 };
 
+template <typename C>
 template <typename F>
-auto MouseEvent::add(Event::Type event_type, F&& callback) {
-  auto ptr = reinterpret_cast<std::uintptr_t>(static_cast<void*>(&callback));
-  _calls.emplace_back(Meta{std::forward<F>(callback), ptr, event_type});
+auto GenericEvent<C>::add(Event::Type event_type, F&& arg) {
+  auto ptr = reinterpret_cast<std::uintptr_t>(static_cast<void*>(&arg));
+  _calls.emplace_back(Meta{.func = arg, .id = ptr, .type = event_type});
   return ptr;
 }
 
+template <typename C>
 template <typename F>
-void MouseEvent::remove(F&& callback) {
-  auto ptr = reinterpret_cast<std::uintptr_t>(static_cast<void*>(&callback));
+void GenericEvent<C>::remove(F&& arg) {
+  auto ptr = reinterpret_cast<std::uintptr_t>(static_cast<void*>(&arg));
   std::erase_if(_calls, [&ptr](Meta m) { return m.id == ptr; });
 }
 
-void MouseEvent::update(Type event) {
-  for (auto&& x : _calls) {
+template <typename C>
+void GenericEvent<C>::update(Type event) {
+  for (Meta& x : _calls) {
     if (x.type == event) {
-      x.func(data);
+      x.func(this->data);
     }
   }
 }
 
+struct MouseData {
+  int x{0};
+  int y{0};
+  int offset_x{0};
+  int offset_y{0};
+  std::shared_ptr<AbstractUIElement> element;
+  UIContext* ctx;
+};
+
+class MouseEvent : public GenericEvent<MouseData> {};
 };  // namespace Event
 
 /** @brief Abstract base for all UI elements with nested composition support.
@@ -756,6 +762,7 @@ class Renderer {
 class UIContext : public ScreenContext, public Renderer {
  public:
   Event::MouseEvent mouse_event{Event::MouseEvent()};
+
   UIContext() = default;
   ~UIContext() = default;
 
@@ -901,7 +908,7 @@ class UIButton : public IUIElement<TypeId::Button> {
       std::string label,
       int x,
       int y,
-      std::function<void(Event::MouseEvent::Data)> callback);
+      std::function<void(Event::MouseData)> callback);
 
   void render() {};
 };
@@ -920,7 +927,7 @@ UIButton::UIButton(Event::MouseEvent* event,
   composition.emplace_back(std::move(box));
   composition.emplace_back(std::move(text));
 
-  event->add(Event::Type::Click, [&](Event::MouseEvent::Data d) {
+  event->add(Event::Type::Click, [&](Event::MouseData d) {
     if (d.element && d.element->window == this->window) {
       callback(d);
     }
@@ -932,7 +939,7 @@ std::unique_ptr<UIButton> UIButton::create(
     std::string label,
     int x,
     int y,
-    std::function<void(Event::MouseEvent::Data)> callback = {}) {
+    std::function<void(Event::MouseData)> callback = {}) {
   return std::make_unique<UIButton>(event, label, x, y, callback);
 }
 
