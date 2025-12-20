@@ -144,6 +144,15 @@ struct MouseData {
 };
 
 class MouseEvent : public GenericEvent<MouseData> {};
+
+struct ScreenData {
+  int width{};
+  int height{};
+  UIContext* ctx;
+};
+
+class ScreenEvent : public GenericEvent<ScreenData> {};
+
 };  // namespace Event
 
 /** @brief Abstract base for all UI elements with nested composition support.
@@ -424,6 +433,12 @@ class UIText : public IUIElement<TypeId::Text> {
   /**@brief Returns the width of the window.*/
   int get_width() const { return width; };
 
+  void set_pos(int x, int y);
+
+  void set_label(std::string label);
+
+  void set_dimensions(int width, int height);
+
   /**@brief Creates an UI text element.
    * @param x Horizontal position of window.
    * @param y Vectical position of window.
@@ -501,6 +516,22 @@ void UIText::render() {
   mvwprintw(window, text_y, text_x, "%s", label.c_str());
   wnoutrefresh(window);
 }
+
+void UIText::set_pos(int x, int y) {
+  this->win_x = x;
+  this->win_y = y;
+  mvwin(window, y, x);
+};
+
+void UIText::set_label(std::string label) {
+  this->label = label;
+};
+
+void UIText::set_dimensions(int width, int height) {
+  this->width = width;
+  this->height = height;
+  wresize(window, height, width);
+};
 
 std::unique_ptr<UIText> _create_uitext_primitive(int text_x,
                                                  int text_y,
@@ -817,6 +848,9 @@ void UIContext::start() {
     wnoutrefresh(win);
     if (c == KEY_RESIZE) {
       update_dimensions();
+      screen_event.data.ctx = this;
+      screen_event.data.height = ScreenContext::get_height();
+      screen_event.data.width = ScreenContext::get_width();
       observer().notify(Event::Type::Resize);
     }
 
