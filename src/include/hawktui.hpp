@@ -113,7 +113,8 @@ template <typename C>
 template <typename F>
 auto GenericEvent<C>::add(Event::Type event_type, F&& arg) {
   auto ptr = reinterpret_cast<std::uintptr_t>(static_cast<void*>(&arg));
-  _calls.emplace_back(Meta{.func = arg, .id = ptr, .type = event_type});
+  _calls.emplace_back(
+      Meta{.func = std::forward<F>(arg), .id = ptr, .type = event_type});
   return ptr;
 }
 
@@ -569,7 +570,7 @@ class ScreenContext {
   int _screen_height;
   bool _running;
   Event::Observer _observer;
-  std::vector<std::unique_ptr<AbstractUIElement>> _children;
+  std::vector<std::shared_ptr<AbstractUIElement>> _children;
 
   void configure_ncurses();
   void cleanup_ncurses();
@@ -605,7 +606,7 @@ class ScreenContext {
    * @return Read-only view of the element hierarchy.
    * @note Do not modify or store the returned reference.
    */
-  const std::vector<std::unique_ptr<AbstractUIElement>>& get_children() const {
+  const std::vector<std::shared_ptr<AbstractUIElement>>& get_children() const {
     return _children;
   }
 
@@ -625,7 +626,7 @@ class ScreenContext {
    * @warning Child ownership transfers to ScreenContext. Do not reference
    * after calling.
    * */
-  void add_child(std::unique_ptr<AbstractUIElement> child);
+  void add_child(std::shared_ptr<AbstractUIElement> child);
 
   /** @brief Deletes child UI element from this context's hierarchy.
    * @param child Raw UI Element pointer (from any_child.get()).
@@ -644,10 +645,10 @@ class ScreenContext {
   Event::Observer& observer() { return _observer; }
 };
 
-void ScreenContext::add_child(std::unique_ptr<AbstractUIElement> child) {
+void ScreenContext::add_child(std::shared_ptr<AbstractUIElement> child) {
   if (!child)
     return;
-  _children.emplace_back(std::move(child));
+  _children.emplace_back(child);
 }
 
 void ScreenContext::del_child(AbstractUIElement* child) {
@@ -762,8 +763,9 @@ class Renderer {
 class UIContext : public ScreenContext, public Renderer {
  public:
   Event::MouseEvent mouse_event{Event::MouseEvent()};
+  Event::ScreenEvent screen_event{Event::ScreenEvent()};
 
-  UIContext() = default;
+  UIContext();
   ~UIContext() = default;
 
   /** @brief Starts the main ncurses event loop with child rendering and event
@@ -795,6 +797,8 @@ class UIContext : public ScreenContext, public Renderer {
    * */
   void batch_render();
 };
+
+UIContext::UIContext() {}
 
 void UIContext::start() {
   batch_render();
@@ -903,7 +907,7 @@ class UIButton : public IUIElement<TypeId::Button> {
    * @important Callback methods MUST have a parameter of type
    * Event::MouseEvent::Data.
    * */
-  static std::unique_ptr<UIButton> create(
+  static std::shared_ptr<UIButton> create(
       Event::MouseEvent* event,
       std::string label,
       int x,
@@ -934,13 +938,13 @@ UIButton::UIButton(Event::MouseEvent* event,
   });
 }
 
-std::unique_ptr<UIButton> UIButton::create(
+std::shared_ptr<UIButton> UIButton::create(
     Event::MouseEvent* event,
     std::string label,
     int x,
     int y,
     std::function<void(Event::MouseData)> callback = {}) {
-  return std::make_unique<UIButton>(event, label, x, y, callback);
+  return std::make_shared<UIButton>(event, label, x, y, callback);
 }
 
 #endif

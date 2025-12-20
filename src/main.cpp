@@ -36,43 +36,20 @@ int main() {
   //       }
   //     });
 
-  // auto box = UIButton::create(
-  //     &CtxData::events, "Quit NEOW!", CtxData::screen_width - 12, 0,
-  //     [&](UIContext::MouseEvent e) { CtxData::running = false; });
-
-  // ctx->events.subscribe<EventManager::Event>(
-  //     "resize", [&](EventManager::Event e) {
-  //       text_label->label = update_stats().c_str();
-  //       auto text = std::static_pointer_cast<UIText>(box->composition[1]);
-  //       text->win_x = ctx->screen_width - 12;
-  //       text->adjust();
-  //     });
-
-  // auto line = std::make_shared<UILine>(-3, 4, -5, 0);
-  // auto line = std::make_shared<UILine>(0, 0, 10, -10);
-  //
-
   auto g_mouse_callback = [](Event::MouseData d) { d.ctx->stop(); };
   auto button = UIButton::create(&ctx->mouse_event, "Quit",
                                  ctx->get_width() - 6, 0, g_mouse_callback);
 
-  // ctx->add_child(std::move(button));
-
-  // auto box = std::make_unique<UIBox>();
-  // ctx->add_child(std::move(box));
-
-  // auto g_mouse_callback = [](Event::MouseEvent::Data d) { d.ctx->stop(); };
-  // ctx->mouse_event.add(Event::Type::Click, g_mouse_callback);
-
-  auto box = UIBox::create();
-  auto text = UIText::create(20, 10, "Quit", box->window);
+  ctx->screen_event.add(Event::Type::Resize, [&](Event::ScreenData d) {
+    auto p = button->composition[1];
+    auto text = std::static_pointer_cast<UIText>(button->composition[1]);
+    text->set_pos(ctx->get_width() - 6, 0);
+  });
 
   ctx->observer().sub(Event::Type::Click, ctx->mouse_event);
-  // ctx->observer().sub(Event::Type::Click, ctx->mouse_event);
+  ctx->observer().sub(Event::Type::Resize, ctx->screen_event);
 
-  ctx->add_child(std::move(button));
-  // ctx->add_child(std::move(box));
-  // ctx->add_child(std::move(text));
+  ctx->add_child(button);
   ctx->start();
   delete ctx;
   return 0;
