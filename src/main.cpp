@@ -8,9 +8,7 @@
 int main() {
   UIContext* ctx = new UIContext();
 
-  auto g_mouse_callback = [](Event::MouseData d) {
-    // d.ctx->stop();
-  };
+  auto g_mouse_callback = [](Event::MouseData d) { d.ctx->stop(); };
   auto button = UIButton::create(&ctx->mouse_event, "Quit",
                                  ctx->get_width() - 6, 0, g_mouse_callback);
 
@@ -36,6 +34,11 @@ int main() {
   // });
 
   ctx->add_child(button);
+
+  // auto box = UIBox::create();
+  // auto text = UIText::create(20, 10, "Quit");
+  // ctx->add_child(box);
+  // ctx->add_child(text);
 
   for (int x{}; x < 1; x++) {
     std::string str{"node" + std::to_string(x)};

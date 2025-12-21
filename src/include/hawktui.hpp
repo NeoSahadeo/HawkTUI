@@ -136,7 +136,8 @@ struct MouseData {
   int y{0};
   int offset_x{0};
   int offset_y{0};
-  std::shared_ptr<AbstractUIElement> element;
+  std::shared_ptr<AbstractUIElement> selected_element;
+  std::vector<std::shared_ptr<AbstractUIElement>> hits;
   UIContext* ctx;
 };
 
@@ -901,15 +902,6 @@ class UIContext : public ScreenContext, public Renderer {
    * */
   void handle_click(std::vector<std::shared_ptr<AbstractUIElement>> children);
 
-  /** @brief Checks if child has a shared_ptr UI hierarchy and forwards
-   * handling to the shared_ptr handle_click().
-   * @param children Unique ownership hierarchy to test for shared_ptr
-   * hierarchy.
-   * @note Internal. Automatically called from start().
-   * */
-  void handle_click(
-      const std::vector<std::unique_ptr<AbstractUIElement>>& children);
-
   /** @brief Wraps render() with a single wnoutrefresh() + doupdate() for
    * efficiency and to avoid flickering.
    * @note Internal method. Use start() instead to insure children exist.
@@ -926,6 +918,7 @@ void UIContext::start() {
   MEVENT event;
   int c{};
   mouse_event.data.ctx = this;
+
   while (is_running()) {
     c = wgetch(win);
     if (c == 'q') {
@@ -950,10 +943,14 @@ void UIContext::start() {
         if (event.bstate & BUTTON1_PRESSED) {
           handle_click(get_children());
           observer().notify(Event::Type::Mousedown);
+          // for (auto& ele : mouse_event.data.hits) {
+          // logToFile(std::to_string(reinterpret_cast<uintptr_t>(ele->window)));
+          // }
         } else if (event.bstate & BUTTON1_RELEASED) {
           observer().notify(Event::Type::Mouseup);
           observer().notify(Event::Type::Click);
-          mouse_event.data.element.reset();
+          mouse_event.data.selected_element.reset();
+          mouse_event.data.hits.clear();
         }
       }
     }
@@ -968,79 +965,15 @@ void UIContext::batch_render() {
 }
 
 void UIContext::handle_click(
-    const std::vector<std::unique_ptr<AbstractUIElement>>& _children) {
-  for (auto& child : _children) {
-    if (child->composition.size() > 0) {
-      UIContext::handle_click(child->composition);
-    };
-  }
-}
-
-void UIContext::handle_click(
     std::vector<std::shared_ptr<AbstractUIElement>> _children) {
   for (auto& child : _children) {
-    if (mouse_event.data.element)
-      goto element_found;
+    if (wenclose(child->window, mouse_event.data.y, mouse_event.data.x))
+      mouse_event.data.hits.emplace_back(child);
+
     if (child->composition.size() > 0) {
       handle_click(child->composition);
-    };
-    switch (child->type()) {
-      case Type::Id::Button: {
-        auto button = std::static_pointer_cast<UINode>(child);
-        std::shared_ptr<UIBox> box = nullptr;
-        for (std::shared_ptr<AbstractUIElement>& nested_child :
-             button->composition) {
-          if (nested_child->type() == Type::Id::Box) {
-            box = std::static_pointer_cast<UIBox>(nested_child);
-            break;
-          }
-        }
-        if (!box)
-          break;
-
-        int start_y, start_x;
-        getbegyx(box->window, start_y, start_x);
-        if (mouse_event.data.x >= start_x &&
-            mouse_event.data.x <= start_x + box->get_width() &&
-            mouse_event.data.y >= start_y &&
-            mouse_event.data.y <= start_y + box->get_height()) {
-          mouse_event.data.offset_x = mouse_event.data.x - start_x;
-          mouse_event.data.offset_y = mouse_event.data.y - start_y;
-          mouse_event.data.element = button;
-        }
-        break;
-      }
-      case Type::Id::Node: {
-        auto node = std::static_pointer_cast<UINode>(child);
-        std::shared_ptr<UIBox> box = nullptr;
-        for (std::shared_ptr<AbstractUIElement>& nested_child :
-             node->composition) {
-          if (nested_child->type() == Type::Id::Box) {
-            box = std::static_pointer_cast<UIBox>(nested_child);
-            break;
-          }
-        }
-        if (!box)
-          return;
-
-        int start_y, start_x;
-        getbegyx(box->window, start_y, start_x);
-        if (mouse_event.data.x >= start_x &&
-            mouse_event.data.x <= start_x + box->get_width() &&
-            mouse_event.data.y >= start_y &&
-            mouse_event.data.y <= start_y + box->get_height()) {
-          mouse_event.data.offset_x = mouse_event.data.x - start_x;
-          mouse_event.data.offset_y = mouse_event.data.y - start_y;
-          mouse_event.data.element = node;
-        }
-        break;
-      }
-      default:
-        break;
-    };
+    }
   }
-element_found:
-  return;
 }
 
 template <typename F>
@@ -1058,8 +991,10 @@ UIButton::UIButton(Event::MouseEvent* event,
   composition.emplace_back(text);
 
   event->add(Event::Type::Click, [&](Event::MouseData d) {
-    if (d.element && d.element->window == this->window) {
-      callback(d);
+    for (auto& ele : d.hits) {
+      if (ele->window == this->window) {
+        callback(d);
+      }
     }
   });
 }
@@ -1082,12 +1017,17 @@ UINode::UINode(Event::MouseEvent* e, int x, int y, std::string label) {
   this->window = box->window;
 
   clickable = UIButton::create(e, "x", 0, 0, [&](Event::MouseData d) {
-    if (!current_line && d.element && d.element->window == clickable->window) {
-      logToFile("Clicked!");
-      line_origin = Coords{d.x, d.y};
-      current_line = UILine::create(line_origin, line_origin);
-      composition.emplace_back(current_line);
-    }
+    // for (auto& ele : d.hits) {
+    //   if (ele->window == this->window) {
+    //   }
+    // }
+    // if (!current_line && d.element && d.element->window == clickable->window)
+    // {
+    //   logToFile("Clicked!");
+    //   line_origin = Coords{d.x, d.y};
+    //   current_line = UILine::create(line_origin, line_origin);
+    //   composition.emplace_back(current_line);
+    // }
   });
 
   composition.emplace_back(box);
@@ -1095,16 +1035,19 @@ UINode::UINode(Event::MouseEvent* e, int x, int y, std::string label) {
   composition.emplace_back(clickable);
 
   e->add(Event::Type::Mousedown, [&](Event::MouseData d) {
-    if (!current_line && d.element && d.element->window == clickable->window) {
-      line_origin = Coords{d.x, d.y};
-      current_line = UILine::create(line_origin, line_origin);
-      composition.emplace_back(current_line);
+    for (auto& ele : d.hits) {
+      if (ele->window == clickable->window) {
+        // line_origin = Coords{d.x, d.y};
+        // current_line = UILine::create(line_origin, line_origin);
+        // composition.emplace_back(current_line);
+      }
     }
-    if (current_line && !d.element) {
-      line_origin = {0, 0};
-      composition.pop_back();
-      current_line.reset();
-    }
+    // }
+    // if (current_line && !d.element) {
+    //   line_origin = {0, 0};
+    //   composition.pop_back();
+    //   current_line.reset();
+    // }
   });
 
   e->add(Event::Type::Mouseup, [&](Event::MouseData d) {
@@ -1120,18 +1063,18 @@ UINode::UINode(Event::MouseEvent* e, int x, int y, std::string label) {
   });
 
   e->add(Event::Type::Mousemove, [&](Event::MouseData d) {
-    if (d.element && d.element->window == this->window) {
-      this->x = d.x - d.offset_x;
-      this->y = d.y - d.offset_y;
-      auto box =
-          std::static_pointer_cast<UIBox>(this->clickable->composition.front());
-      box->set_pos(this->x, this->y);
-      mvwin(this->window, this->y, this->x);
-    }
-
-    if (!d.element && current_line) {
-      current_line->set_pos(line_origin, Coords{d.x, d.y});
-    }
+    // if (d.element && d.element->window == this->window) {
+    //   this->x = d.x - d.offset_x;
+    //   this->y = d.y - d.offset_y;
+    //   auto box =
+    //       std::static_pointer_cast<UIBox>(this->clickable->composition.front());
+    //   box->set_pos(this->x, this->y);
+    //   mvwin(this->window, this->y, this->x);
+    // }
+    //
+    // if (!d.element && current_line) {
+    //   current_line->set_pos(line_origin, Coords{d.x, d.y});
+    // }
   });
 }
 
