@@ -1,13 +1,13 @@
 #include <ncurses.h>
 #include <unistd.h>
-#include <any>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <iostream>
 #include <memory>
+#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -199,97 +199,132 @@ class IUIElement : public AbstractUIElement {
   TypeId type() { return T; }
 };
 
-/**
- * Draws a line from point a to point b
- * */
+/** @bried UI Line element. */
 class UILine : public IUIElement<TypeId::Line> {
-  typedef struct Coords {
-    int x{};
-    int y{};
-  } Coords;
-
-  int eq_line(int x) { return gradient * (x - p1.x) + p1.y; }
+ private:
+  Coords pos1{}, pos2{};
+  double gradient{};
+  int x_delta{};
+  int y_delta{};
+  int width{};
+  int height{};
+  char x_dir{};
+  char y_dir{};
+  char quadrant{};
+  int calcx_line(int x);
+  void calc_char();
+  void _calculate_line_data();
 
  public:
-  int x_delta;
-  int y_delta;
-  int width;
-  int height;
-  double gradient;
-  Coords p1, p2;
-  UILine(int x1, int y1, int x2, int y2) {
-    p1 = {.x = x1, .y = y1};
-    p2 = {.x = x2, .y = y2};
-    x_delta = x2 - x1;
-    y_delta = y2 - y1;
-    if (x2 - x1 != 0) {
-      gradient = (double)(y2 - y1) / (double)(x2 - x1);
-    } else {
-      gradient = 0;
-    }
-    width = std::abs(x_delta) + 1;
-    height = std::abs(y_delta) + 1;
-    window = newwin(width, height, 0, 0);
-    // wbkgd(window, COLOR_PAIR(1));
-  }
+  UILine(const Coords& pos1, const Coords& pos2, WINDOW* window);
 
-  void render() override {
-    if (y_delta == 0) {
-      mvwhline(window, p1.y, p1.x, '-', width);
-      wnoutrefresh(window);
-      return;
-    }
-    if (x_delta == 0) {
-      mvwvline(window, p1.y, p1.x, '|', height);
-      wnoutrefresh(window);
-      return;
-    }
+  static std::shared_ptr<UILine> create(Coords pos1,
+                                        Coords pos2,
+                                        WINDOW* window);
 
-    /*  Quadrant layout
-     *  0,2 = '/'
-     *  1,3 = '\'
-     *
-     *       |
-     *    1  |  0
-     *       |
-     *  -----|------
-     *       |
-     *    2  |  3
-     *       |
-     * */
-
-    Coords norm_p2 = {.x = p2.x, .y = p2.y};
-    if (p1.x != 0) {
-      norm_p2.x = p2.x - p1.x;
-    }
-    if (p1.y != 0) {
-      norm_p2.y = p2.y - p1.y;
-    }
-
-    char x_dir = norm_p2.x > 0 ? 1 : -1;
-    char y_dir = norm_p2.y > 0 ? 1 : -1;
-    // logToFile("---> " + std::to_string(norm_p2.x) + ", " +
-    //           std::to_string(norm_p2.y));
-
-    char quadrant;
-    if (x_dir == 1 && y_dir == 1) {
-      quadrant = '\\';
-    } else if (x_dir == -1 && y_dir == 1) {
-      quadrant = '/';
-    } else if (x_dir == -1 && y_dir == -1) {
-      quadrant = '\\';
-    } else if (x_dir == 1 && y_dir == -1) {
-      quadrant = '/';
-    }
-
-    // logToFile("Quad: " + std::to_string(quadrant));
-    for (int i{p1.x}; i != p2.x; i += x_dir) {
-      // logToFile(std::to_string(i) + ", " + std::to_string(eq_line(i)));
-      mvwprintw(window, eq_line(i), i, "%c", quadrant);
-    }
-    wnoutrefresh(window);
-  }
+  void set_pos(Coords pos1, Coords pos2);
+  void render() override;
 };
+
+void UILine::_calculate_line_data() {
+  x_delta = pos2.x - pos1.x;
+  y_delta = pos2.y - pos1.y;
+
+  if (x_delta == 0) {
+    gradient = 0;
+  } else {
+    gradient = (double)(y_delta) / (double)(x_delta);
+  }
+
+  width = std::abs(x_delta) + 1;
+  height = std::abs(y_delta) + 1;
+}
+
+UILine::UILine(const Coords& pos1, const Coords& pos2, WINDOW* window)
+    : pos1(pos1), pos2(pos2) {
+  _calculate_line_data();
+  if (window) {
+    this->window = window;
+    wresize(this->window, height, width);
+  } else {
+    this->window = stdscr;
+  }
+}
+
+std::shared_ptr<UILine> UILine::create(Coords pos1,
+                                       Coords pos2,
+                                       WINDOW* window = nullptr) {
+  return std::make_shared<UILine>(pos1, pos2, window);
+};
+
+void UILine::set_pos(Coords pos1, Coords pos2) {
+  clear();
+  this->pos1 = pos1;
+  this->pos2 = pos2;
+  _calculate_line_data();
+};
+
+int UILine::calcx_line(int x) {
+  return gradient * (x - pos1.x) + pos1.y;
+}
+
+void UILine::calc_char() {
+  /*  Quadrant layout
+   *  0,2 = '/'
+   *  1,3 = '\'
+   *
+   *       |
+   *    1  |  0
+   *       |
+   *  -----|------
+   *       |
+   *    2  |  3
+   *       |
+   * */
+
+  Coords norm_p2 = {.x = pos2.x, .y = pos2.y};
+  if (pos1.x != 0) {
+    norm_p2.x = pos2.x - pos1.x;
+  }
+  if (pos1.y != 0) {
+    norm_p2.y = pos2.y - pos1.y;
+  }
+
+  x_dir = norm_p2.x > 0 ? 1 : -1;
+  y_dir = norm_p2.y > 0 ? 1 : -1;
+
+  if (x_dir == 1 && y_dir == 1 || x_dir == -1 && y_dir == -1) {
+    quadrant = '\\';
+  } else if (x_dir == -1 && y_dir == 1 || x_dir == 1 && y_dir == -1) {
+    quadrant = '/';
+  }
+}
+
+void UILine::render() {
+  if (y_delta == 0) {
+    int fp = 0;
+    if (pos1.x > pos2.x)
+      fp = pos1.x - pos2.x;
+    mvwhline(window, pos1.y, pos1.x - fp, '-', width);
+    wnoutrefresh(window);
+    return;
+  }
+  if (x_delta == 0) {
+    int fp = 0;
+    if (pos1.y > pos2.y)
+      fp = pos1.y - pos2.y;
+    mvwvline(window, pos1.y - fp, pos1.x, '|', height);
+    wnoutrefresh(window);
+    return;
+  }
+
+  calc_char();
+
+  for (int i{pos1.x}; i != pos2.x; i += x_dir) {
+    mvwprintw(window, calcx_line(i), i, "%c", quadrant);
+  }
+  wnoutrefresh(window);
+}
 
 /** @brief Primitive box element.
  * default:

@@ -40,16 +40,35 @@ int main() {
   auto button = UIButton::create(&ctx->mouse_event, "Quit",
                                  ctx->get_width() - 6, 0, g_mouse_callback);
 
+  auto origin = Coords{0, 0};
+  auto p2 = Coords{ctx->get_width(), ctx->get_height()};
+
+  auto b = UILine::create(origin, p2);
+
   ctx->screen_event.add(Event::Type::Resize, [&](Event::ScreenData d) {
     auto p = button->composition[1];
     auto text = std::static_pointer_cast<UIText>(button->composition[1]);
     text->set_pos(ctx->get_width() - 6, 0);
+    // p2 = Coords{ctx->get_width(), ctx->get_height()};
+    // b->set_pos(origin, p2);
   });
 
+  ctx->mouse_event.add(Event::Type::Mousemove, [&](Event::MouseData d) {
+    b->set_pos(origin, Coords{d.x, d.y});
+  });
+
+  ctx->mouse_event.add(Event::Type::Click, [&](Event::MouseData d) {
+    auto p = Coords{d.x, d.y};
+    origin = p;
+    b->set_pos(origin, p);
+  });
+
+  ctx->observer().sub(Event::Type::Mousemove, ctx->mouse_event);
   ctx->observer().sub(Event::Type::Click, ctx->mouse_event);
   ctx->observer().sub(Event::Type::Resize, ctx->screen_event);
 
   ctx->add_child(button);
+  ctx->add_child(b);
   ctx->start();
   delete ctx;
   return 0;
