@@ -5,9 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
-#include <iostream>
 #include <memory>
-#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -17,23 +15,22 @@
 #ifndef HAWKTUI_H
 #define HAWKTUI_H
 
-#define M_PI_2x 6.283185307
-#define M_PI_3rd 4.71238898
+class UIContext;
+class AbstractUIElement;
 
 typedef struct Coords {
   int x, y;
 } Coords;
 
-class UIContext;
-class AbstractUIElement;
+namespace Type {
+enum class Id { None, Box, Text, Button, Line, Curve, Node };
 
-enum class TypeId { None, Box, Text, Button, Line, Curve, Node };
-
-enum class TypeFlags : uint8_t {
+enum class Flags : uint8_t {
   None,
   Draggable,
   Editable,
 };
+};  // namespace Type
 
 namespace Event {
 enum class Type {
@@ -171,7 +168,7 @@ class AbstractUIElement {
   virtual ~AbstractUIElement() = default;
 
   std::vector<std::shared_ptr<AbstractUIElement>> composition{};
-  TypeFlags flags{TypeFlags::None};
+  Type::Flags flags{Type::Flags::None};
   WINDOW* window{nullptr};
 
   /** @brief Calls ncurses functions to draw UI element to its parent
@@ -185,22 +182,22 @@ class AbstractUIElement {
    * @note Automatically invoked by UIContext::handle_click() during mouse
    * events.
    * */
-  virtual TypeId type() = 0;
+  virtual Type::Id type() = 0;
 };
 
 /** @brief Templated UI element base with shared window support and default
  * type().
  * */
-template <TypeId T>
+template <Type::Id T>
 class IUIElement : public AbstractUIElement {
  public:
   IUIElement() = default;
   IUIElement(WINDOW* window) { this->window = window; }
-  TypeId type() { return T; }
+  Type::Id type() { return T; }
 };
 
 /** @bried UI Line element. */
-class UILine : public IUIElement<TypeId::Line> {
+class UILine : public IUIElement<Type::Id::Line> {
  private:
   Coords pos1{}, pos2{};
   double gradient{};
@@ -258,7 +255,7 @@ std::shared_ptr<UILine> UILine::create(Coords pos1,
 };
 
 void UILine::set_pos(Coords pos1, Coords pos2) {
-  clear();
+  werase(window);
   this->pos1 = pos1;
   this->pos2 = pos2;
   _calculate_line_data();
@@ -331,12 +328,12 @@ void UILine::render() {
  *  width 10 chars
  *  height 10 chars
  * */
-class UIBox : public IUIElement<TypeId::Box> {
+class UIBox : public IUIElement<Type::Id::Box> {
  private:
-  size_t width;
-  size_t height;
-  int x;
-  int y;
+  size_t width{};
+  size_t height{};
+  int x{};
+  int y{};
 
  public:
   /** @brief Overrides the default window with a user provided window.
@@ -378,7 +375,7 @@ class UIBox : public IUIElement<TypeId::Box> {
    * @param width Width of the box
    * @note All parameters are in characters.
    * */
-  static std::unique_ptr<UIBox> create(int x,
+  static std::shared_ptr<UIBox> create(int x,
                                        int y,
                                        int height,
                                        int width,
@@ -412,15 +409,15 @@ void UIBox::set_pos(int x, int y) {
   mvwin(window, y, x);
 }
 
-std::unique_ptr<UIBox> UIBox::create(int x = 0,
+std::shared_ptr<UIBox> UIBox::create(int x = 0,
                                      int y = 0,
                                      int width = 0,
                                      int height = 0,
                                      WINDOW* window = nullptr) {
   if (window) {
-    return std::make_unique<UIBox>(window, width, height, x, y);
+    return std::make_shared<UIBox>(window, width, height, x, y);
   }
-  return std::make_unique<UIBox>(width, height, x, y);
+  return std::make_shared<UIBox>(width, height, x, y);
 }
 
 void UIBox::render() {
@@ -435,7 +432,7 @@ void UIBox::render() {
  * @note UIText::create will automatically generate the appropriate text UI
  * element for a given label.
  * */
-class UIText : public IUIElement<TypeId::Text> {
+class UIText : public IUIElement<Type::Id::Text> {
  private:
   std::string label;
   size_t width;
@@ -480,7 +477,7 @@ class UIText : public IUIElement<TypeId::Text> {
    * @param label String that is rendered.
    * @param window Optional window override.
    * */
-  static std::unique_ptr<UIText> create(int x,
+  static std::shared_ptr<UIText> create(int x,
                                         int y,
                                         std::string label,
                                         WINDOW* window);
@@ -493,7 +490,7 @@ class UIText : public IUIElement<TypeId::Text> {
    * @param label String that is rendered.
    * @param window Optional window override.
    * */
-  static std::unique_ptr<UIText> create(int x,
+  static std::shared_ptr<UIText> create(int x,
                                         int y,
                                         int width,
                                         int height,
@@ -510,7 +507,7 @@ class UIText : public IUIElement<TypeId::Text> {
    * @param label String that is rendered.
    * @param window Optional window override.
    * */
-  static std::unique_ptr<UIText> create(int text_x,
+  static std::shared_ptr<UIText> create(int text_x,
                                         int text_y,
                                         int win_x,
                                         int win_y,
@@ -568,7 +565,7 @@ void UIText::set_dimensions(int width, int height) {
   wresize(window, height, width);
 };
 
-std::unique_ptr<UIText> _create_uitext_primitive(int text_x,
+std::shared_ptr<UIText> _create_uitext_primitive(int text_x,
                                                  int text_y,
                                                  int win_x,
                                                  int win_y,
@@ -585,18 +582,18 @@ std::unique_ptr<UIText> _create_uitext_primitive(int text_x,
     height = 3;
     text_y = 1;
   }
-  return std::make_unique<UIText>(text_x, text_y, win_x, win_y, width, height,
+  return std::make_shared<UIText>(text_x, text_y, win_x, win_y, width, height,
                                   label, window);
 }
 
-std::unique_ptr<UIText> UIText::create(int x,
+std::shared_ptr<UIText> UIText::create(int x,
                                        int y,
                                        std::string label = "",
                                        WINDOW* window = nullptr) {
   return _create_uitext_primitive(0, 0, x, y, label, -1, -1, window);
 }
 
-std::unique_ptr<UIText> UIText::create(int x,
+std::shared_ptr<UIText> UIText::create(int x,
                                        int y,
                                        int width,
                                        int height,
@@ -605,7 +602,7 @@ std::unique_ptr<UIText> UIText::create(int x,
   return _create_uitext_primitive(0, 0, x, y, label, width, height, window);
 }
 
-std::unique_ptr<UIText> create(int text_x,
+std::shared_ptr<UIText> create(int text_x,
                                int text_y,
                                int win_x,
                                int win_y,
@@ -615,6 +612,62 @@ std::unique_ptr<UIText> create(int text_x,
                                WINDOW* window) {
   return _create_uitext_primitive(text_x, text_y, win_x, win_y, label, width,
                                   height, window);
+};
+
+/**@brief UI Button element class.
+ * @note Callback methods are very flexible and are allowed to have capture
+ * groups.
+ * @important Callback methods MUST have a parameter of type
+ * Event::MouseEvent::Data.
+ * */
+class UIButton : public IUIElement<Type::Id::Button> {
+ public:
+  template <typename F>
+
+  /**@brief Default contructor. */
+  UIButton(Event::MouseEvent* event,
+           std::string label,
+           int x,
+           int y,
+           F&& callback);
+
+  /**@brief Creates a UI button element.
+   * @param event Event handler context for the button to bind to.
+   * @param label The buttons label.
+   * @param x Horizontal position of the button.
+   * @param y Vectical position of the button.
+   * @param callback Optional callback method.
+   * @important Callback methods MUST have a parameter of type
+   * Event::MouseEvent::Data.
+   * */
+  static std::shared_ptr<UIButton> create(
+      Event::MouseEvent* event,
+      std::string label,
+      int x,
+      int y,
+      std::function<void(Event::MouseData)> callback);
+
+  void render() {};
+};
+
+class UINode : public IUIElement<Type::Id::Node> {
+ private:
+  std::vector<std::shared_ptr<UILine>> connections;
+  int x;
+  int y;
+  std::shared_ptr<UIButton> clickable{0};
+  std::shared_ptr<UILine> current_line{0};
+  Coords line_origin{};
+
+ public:
+  UINode(Event::MouseEvent* e, int x, int y, std::string label);
+
+  static std::shared_ptr<UINode> create(Event::MouseEvent* e,
+                                        int x,
+                                        int y,
+                                        std::string label);
+
+  void render() {};
 };
 
 /** @brief RAII wrapper for ncurses screen context with UI element hierarchy
@@ -926,21 +979,59 @@ void UIContext::handle_click(
 void UIContext::handle_click(
     std::vector<std::shared_ptr<AbstractUIElement>> _children) {
   for (auto& child : _children) {
+    if (mouse_event.data.element)
+      goto element_found;
     if (child->composition.size() > 0) {
       handle_click(child->composition);
     };
     switch (child->type()) {
-      case TypeId::Box: {
-        auto box = std::static_pointer_cast<UIBox>(child);
+      case Type::Id::Button: {
+        auto button = std::static_pointer_cast<UINode>(child);
+        std::shared_ptr<UIBox> box = nullptr;
+        for (std::shared_ptr<AbstractUIElement>& nested_child :
+             button->composition) {
+          if (nested_child->type() == Type::Id::Box) {
+            box = std::static_pointer_cast<UIBox>(nested_child);
+            break;
+          }
+        }
+        if (!box)
+          break;
+
         int start_y, start_x;
-        getbegyx(child->window, start_y, start_x);
+        getbegyx(box->window, start_y, start_x);
         if (mouse_event.data.x >= start_x &&
             mouse_event.data.x <= start_x + box->get_width() &&
             mouse_event.data.y >= start_y &&
             mouse_event.data.y <= start_y + box->get_height()) {
           mouse_event.data.offset_x = mouse_event.data.x - start_x;
           mouse_event.data.offset_y = mouse_event.data.y - start_y;
-          mouse_event.data.element = child;
+          mouse_event.data.element = button;
+        }
+        break;
+      }
+      case Type::Id::Node: {
+        auto node = std::static_pointer_cast<UINode>(child);
+        std::shared_ptr<UIBox> box = nullptr;
+        for (std::shared_ptr<AbstractUIElement>& nested_child :
+             node->composition) {
+          if (nested_child->type() == Type::Id::Box) {
+            box = std::static_pointer_cast<UIBox>(nested_child);
+            break;
+          }
+        }
+        if (!box)
+          return;
+
+        int start_y, start_x;
+        getbegyx(box->window, start_y, start_x);
+        if (mouse_event.data.x >= start_x &&
+            mouse_event.data.x <= start_x + box->get_width() &&
+            mouse_event.data.y >= start_y &&
+            mouse_event.data.y <= start_y + box->get_height()) {
+          mouse_event.data.offset_x = mouse_event.data.x - start_x;
+          mouse_event.data.offset_y = mouse_event.data.y - start_y;
+          mouse_event.data.element = node;
         }
         break;
       }
@@ -948,43 +1039,9 @@ void UIContext::handle_click(
         break;
     };
   }
+element_found:
+  return;
 }
-
-/**@brief UI Button element class.
- * @note Callback methods are very flexible and are allowed to have capture
- * groups.
- * @important Callback methods MUST have a parameter of type
- * Event::MouseEvent::Data.
- * */
-class UIButton : public IUIElement<TypeId::Button> {
- public:
-  template <typename F>
-
-  /**@brief Default contructor. */
-  UIButton(Event::MouseEvent* event,
-           std::string label,
-           int x,
-           int y,
-           F&& callback);
-
-  /**@brief Creates a UI button element.
-   * @param event Event handler context for the button to bind to.
-   * @param label The buttons label.
-   * @param x Horizontal position of the button.
-   * @param y Vectical position of the button.
-   * @param callback Optional callback method.
-   * @important Callback methods MUST have a parameter of type
-   * Event::MouseEvent::Data.
-   * */
-  static std::shared_ptr<UIButton> create(
-      Event::MouseEvent* event,
-      std::string label,
-      int x,
-      int y,
-      std::function<void(Event::MouseData)> callback);
-
-  void render() {};
-};
 
 template <typename F>
 UIButton::UIButton(Event::MouseEvent* event,
@@ -997,8 +1054,8 @@ UIButton::UIButton(Event::MouseEvent* event,
   box->set_dimensions(text->get_width(), text->get_height());
   this->window = box->window;
 
-  composition.emplace_back(std::move(box));
-  composition.emplace_back(std::move(text));
+  composition.emplace_back(box);
+  composition.emplace_back(text);
 
   event->add(Event::Type::Click, [&](Event::MouseData d) {
     if (d.element && d.element->window == this->window) {
@@ -1014,6 +1071,75 @@ std::shared_ptr<UIButton> UIButton::create(
     int y,
     std::function<void(Event::MouseData)> callback = {}) {
   return std::make_shared<UIButton>(event, label, x, y, callback);
+}
+
+UINode::UINode(Event::MouseEvent* e, int x, int y, std::string label) {
+  auto box = UIBox::create();
+  auto text = UIText::create(x, y, label, box->window);
+  box->set_dimensions(text->get_width(), text->get_height());
+  this->x = x;
+  this->y = y;
+  this->window = box->window;
+
+  clickable = UIButton::create(e, "x", 0, 0, [&](Event::MouseData d) {
+    if (!current_line && d.element && d.element->window == clickable->window) {
+      logToFile("Clicked!");
+      line_origin = Coords{d.x, d.y};
+      current_line = UILine::create(line_origin, line_origin);
+      composition.emplace_back(current_line);
+    }
+  });
+
+  composition.emplace_back(box);
+  composition.emplace_back(text);
+  composition.emplace_back(clickable);
+
+  e->add(Event::Type::Mousedown, [&](Event::MouseData d) {
+    if (!current_line && d.element && d.element->window == clickable->window) {
+      line_origin = Coords{d.x, d.y};
+      current_line = UILine::create(line_origin, line_origin);
+      composition.emplace_back(current_line);
+    }
+    if (current_line && !d.element) {
+      line_origin = {0, 0};
+      composition.pop_back();
+      current_line.reset();
+    }
+  });
+
+  e->add(Event::Type::Mouseup, [&](Event::MouseData d) {
+    // if (current_line && d.element && d.element->type() == Type::Id::Node &&
+    //     d.element->window != this->window &&
+    //     d.element->window != clickable->window) {
+    //   connections.push_back(current_line);
+    //   composition.pop_back();
+    //   composition.emplace_back(connections.back());
+    //   current_line.reset();
+    //   line_origin = {0, 0};
+    // }
+  });
+
+  e->add(Event::Type::Mousemove, [&](Event::MouseData d) {
+    if (d.element && d.element->window == this->window) {
+      this->x = d.x - d.offset_x;
+      this->y = d.y - d.offset_y;
+      auto box =
+          std::static_pointer_cast<UIBox>(this->clickable->composition.front());
+      box->set_pos(this->x, this->y);
+      mvwin(this->window, this->y, this->x);
+    }
+
+    if (!d.element && current_line) {
+      current_line->set_pos(line_origin, Coords{d.x, d.y});
+    }
+  });
+}
+
+std::shared_ptr<UINode> UINode::create(Event::MouseEvent* e,
+                                       int x,
+                                       int y,
+                                       std::string label) {
+  return std::make_shared<UINode>(e, x, y, label);
 }
 
 #endif

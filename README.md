@@ -14,6 +14,6 @@ Womp womp, will write soon. Have to get it to all work first.
 - [x] Boxes
 - [x] Text
 - [x] Buttons
-- [ ] Lines
+- [x] Lines
 - [ ] Curves-approx
 - [ ] Nodes
