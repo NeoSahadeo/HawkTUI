@@ -1,6 +1,6 @@
 NAME        := main
 
-LIBS				:= ncurses
+LIBS				:= ncurses panel
 
 SRC_DIR			:= src
 SRCS				:= $(shell find $(SRC_DIR) -name "*.cpp")
