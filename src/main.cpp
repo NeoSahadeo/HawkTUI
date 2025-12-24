@@ -42,7 +42,13 @@ int main() {
 
   for (int x{}; x < 1; x++) {
     std::string str{"node" + std::to_string(x)};
-    auto node = UINode::create(&ctx->mouse_event, 0, x * 4, str);
+    auto node =
+        UINode::create(&ctx->mouse_event, 0, x * 4, str, g_mouse_callback);
+    // auto button =
+    //     UIButton::create(&ctx->mouse_event, "eXit", 8, 8, g_mouse_callback);
+    // node->callback = g_mouse_callback;
+
+    // node->composition.emplace_back(button);
     ctx->add_child(node);
   }
 

@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <functional>
 #include <memory>
+#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -16,15 +17,6 @@
 #include "log.hpp"
 #ifndef HAWKTUI_H
 #define HAWKTUI_H
-
-/*
- * Idea for clicks
- *
- * Disallow all clicks by default, and only those who bind to a click event
- * should be allowed to click.
- *
- * Maybe do this by flags
- * */
 
 class UIContext;
 class AbstractUIElement;
@@ -43,10 +35,6 @@ enum class Flags : uint8_t {
   Clickable,
 };
 
-enum class Direction {
-  Forward,
-  Reverse,
-};
 };  // namespace Type
 
 constexpr Type::Flags operator&(Type::Flags a, Type::Flags b) {
@@ -666,9 +654,8 @@ std::shared_ptr<UIText> create(int text_x,
  * */
 class UIButton : public IUIElement<Type::Id::Button> {
  public:
-  template <typename F>
-
   /**@brief Default contructor. */
+  template <typename F>
   UIButton(Event::MouseEvent* event,
            std::string label,
            int x,
@@ -699,18 +686,23 @@ class UINode : public IUIElement<Type::Id::Node> {
   std::vector<std::shared_ptr<UILine>> connections;
   int x;
   int y;
-  std::shared_ptr<UIButton> clickable{0};
+  // std::shared_ptr<UIButton> clickable{0};
   std::shared_ptr<UILine> current_line{0};
   Coords line_origin{};
 
  public:
-  UINode(Event::MouseEvent* e, int x, int y, std::string label);
+  std::shared_ptr<UINode> self_;
+  std::function<void(Event::MouseData)> callback;
 
+  template <typename F>
+  UINode(Event::MouseEvent* e, int x, int y, std::string label, F&& c);
+
+  template <typename F>
   static std::shared_ptr<UINode> create(Event::MouseEvent* e,
                                         int x,
                                         int y,
-                                        std::string label);
-
+                                        std::string label,
+                                        F&&);
   void render() {};
 };
 
@@ -735,6 +727,7 @@ class ScreenContext {
   Event::Observer _observer;
   std::vector<PANEL*> _panels;
   std::vector<std::shared_ptr<AbstractUIElement>> _children;
+  std::vector<std::shared_ptr<AbstractUIElement>> _hit_children;
 
   void configure_ncurses();
   void cleanup_ncurses();
@@ -773,25 +766,39 @@ class ScreenContext {
     return _children;
   }
 
+  const std::vector<std::shared_ptr<AbstractUIElement>>& get_hit_children() {
+    return _hit_children;
+  }
+
   /** @brief Sorts children recursively by Z-index.
    * */
-  void sort_children(std::vector<std::shared_ptr<AbstractUIElement>>& _children,
-                     Type::Direction dir = Type::Direction::Reverse) {
-    std::sort(_children.begin(), _children.end(),
-              [&dir](const std::shared_ptr<AbstractUIElement>& a,
-                     const std::shared_ptr<AbstractUIElement>& b) {
-                if (dir == Type::Direction::Reverse)
-                  return a->z_index < b->z_index;
-                if (dir == Type::Direction::Forward)
-                  return a->z_index < b->z_index;
-                return false;
+  void sort_children(
+      std::vector<std::shared_ptr<AbstractUIElement>>& children) {
+    std::sort(children.begin(), children.end(),
+              [](const std::shared_ptr<AbstractUIElement>& a,
+                 const std::shared_ptr<AbstractUIElement>& b) {
+                return a->z_index < b->z_index;
               });
 
-    for (auto& child : _children) {
+    for (auto& child : children) {
       if (child->panel)
         _panels.emplace_back(child->panel);
       if (child && !child->composition.empty())
         sort_children(child->composition);
+    };
+  }
+
+  void sort_hit_children(
+      std::vector<std::shared_ptr<AbstractUIElement>>& children) {
+    std::sort(children.begin(), children.end(),
+              [](const std::shared_ptr<AbstractUIElement>& a,
+                 const std::shared_ptr<AbstractUIElement>& b) {
+                return a->z_index > b->z_index;
+              });
+
+    for (auto& child : children) {
+      if (child && !child->composition.empty())
+        sort_hit_children(child->composition);
     };
   }
 
@@ -834,8 +841,10 @@ void ScreenContext::add_child(std::shared_ptr<AbstractUIElement> child) {
   if (!child)
     return;
   _children.emplace_back(child);
-  sort_children(get_children());
-  update_panels();
+  // _hit_children.emplace_back(child);
+  sort_children(_children);
+  // sort_hit_children(_hit_children);
+  // update_panels();
 }
 
 void ScreenContext::del_child(AbstractUIElement* child) {
@@ -967,7 +976,8 @@ class UIContext : public ScreenContext, public Renderer {
    * @note Internal. Automatically called from unique_ptr-based
    * handle_click().
    * */
-  bool handle_click(std::vector<std::shared_ptr<AbstractUIElement>>& children);
+  bool handle_click(
+      const std::vector<std::shared_ptr<AbstractUIElement>>& children);
 
   /** @brief Wraps render() with a single wnoutrefresh() + doupdate() for
    * efficiency and to avoid flickering.
@@ -1031,8 +1041,8 @@ void UIContext::batch_render() {
 }
 
 bool UIContext::handle_click(
-    std::vector<std::shared_ptr<AbstractUIElement>>& _children) {
-  for (auto& child : _children) {
+    const std::vector<std::shared_ptr<AbstractUIElement>>& children) {
+  for (auto& child : std::ranges::reverse_view(children)) {
     if (!child)
       continue;
 
@@ -1043,7 +1053,8 @@ bool UIContext::handle_click(
 
     if ((child->flags & Type::Flags::Clickable) == Type::Flags::Clickable &&
         wenclose(child->window, mouse_event.data.y, mouse_event.data.x)) {
-      logToFile(std::to_string(reinterpret_cast<uintptr_t>(child->window)));
+      mouse_event.data.selected_element = child;
+      // logToFile(std::to_string(reinterpret_cast<uintptr_t>(child->window)));
       return true;
     }
   }
@@ -1066,14 +1077,10 @@ UIButton::UIButton(Event::MouseEvent* event,
   composition.emplace_back(box);
   composition.emplace_back(text);
 
-  // logToFile(std::to_string(reinterpret_cast<uintptr_t>(text->window)));
-
   event->add(Event::Type::Click, [&](Event::MouseData d) {
-    // for (auto& ele : d.hits) {
-    //   if (ele->window == this->window) {
-    //     callback(d);
-    //   }
-    // }
+    if (d.selected_element && d.selected_element->window == this->window) {
+      callback(d);
+    }
   });
 }
 
@@ -1086,7 +1093,8 @@ std::shared_ptr<UIButton> UIButton::create(
   return std::make_shared<UIButton>(event, label, x, y, callback);
 }
 
-UINode::UINode(Event::MouseEvent* e, int x, int y, std::string label) {
+template <typename F>
+UINode::UINode(Event::MouseEvent* e, int x, int y, std::string label, F&& c0b) {
   auto box = UIBox::create();
   auto text = UIText::create(x, y, label, box->window);
   box->set_dimensions(text->get_width(), text->get_height());
@@ -1097,28 +1105,36 @@ UINode::UINode(Event::MouseEvent* e, int x, int y, std::string label) {
   this->window = box->window;
   this->panel = new_panel(this->window);
 
-  clickable = UIButton::create(e, "x", 0, 0, [&](Event::MouseData d) {
-    // for (auto& ele : d.hits) {
-    //   if (ele->window == this->window) {
-    //   }
-    // }
-    // if (!current_line && d.element && d.element->window == clickable->window)
-    // {
-    //   logToFile("Clicked!");
-    //   line_origin = Coords{d.x, d.y};
-    //   current_line = UILine::create(line_origin, line_origin);
-    //   composition.emplace_back(current_line);
-    // }
-  });
+  auto cb = [self =
+                 std::weak_ptr<UINode>{self_}](Event::MouseData data) -> void {
+    if (auto node = self.lock()) {
+      // Safe access to node
+    }
+  };
 
-  clickable->z_index = 1;
+  auto button = UIButton::create(e, "Exit", 8, 8, cb);
 
   composition.emplace_back(box);
   composition.emplace_back(text);
-  composition.emplace_back(clickable);
+  composition.emplace_back(std::move(button));
 
-  // logToFile(std::to_string(reinterpret_cast<uintptr_t>(box->window)));
-  logToFile(std::to_string(reinterpret_cast<uintptr_t>(clickable->window)));
+  // logToFile("Callback: "+std::to_string(std::forward(g_mouse_callback)));
+
+  // [](Event::MouseData d) {
+  // for (auto& ele : d.hits) {
+  //   if (ele->window == this->window) {
+  //   }
+  // }
+  // if (!current_line && d.element && d.element->window == clickable->window)
+  // {
+  //   logToFile("Clicked!");
+  //   line_origin = Coords{d.x, d.y};
+  //   current_line = UILine::create(line_origin, line_origin);
+  //   composition.emplace_back(current_line);
+  // }
+  // });
+
+  // clickable->z_index = 1;
 
   e->add(Event::Type::Mousedown, [&](Event::MouseData d) {
     // for (auto& ele : d.hits) {
@@ -1149,26 +1165,28 @@ UINode::UINode(Event::MouseEvent* e, int x, int y, std::string label) {
   });
 
   e->add(Event::Type::Mousemove, [&](Event::MouseData d) {
-    // if (d.element && d.element->window == this->window) {
-    //   this->x = d.x - d.offset_x;
-    //   this->y = d.y - d.offset_y;
-    //   auto box =
-    //       std::static_pointer_cast<UIBox>(this->clickable->composition.front());
-    //   box->set_pos(this->x, this->y);
-    //   mvwin(this->window, this->y, this->x);
-    // }
-    //
-    // if (!d.element && current_line) {
+    if (d.selected_element && d.selected_element->window == this->window) {
+      this->x = d.x - d.offset_x;
+      this->y = d.y - d.offset_y;
+      // auto box =
+      //     std::static_pointer_cast<UIBox>(this->clickable->composition.front());
+      // box->set_pos(this->x, this->y);
+      mvwin(this->window, this->y, this->x);
+    }
+
+    // if (!d.selected_element && current_line) {
     //   current_line->set_pos(line_origin, Coords{d.x, d.y});
     // }
   });
 }
 
+template <typename F>
 std::shared_ptr<UINode> UINode::create(Event::MouseEvent* e,
                                        int x,
                                        int y,
-                                       std::string label) {
-  return std::make_shared<UINode>(e, x, y, label);
+                                       std::string label,
+                                       F&& callback) {
+  return std::make_shared<UINode>(e, x, y, label, callback);
 }
 
 #endif

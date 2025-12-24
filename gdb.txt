@@ -1,0 +1,33 @@
+Starting program: /home/neosahadeo/Documents/Projects/Cpp/cppHawkTui/main
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/usr/lib/libthread_db.so.1".
+
+Program received signal SIGSEGV, Segmentation fault.
+0x00007fffffffd8d0 in ?? ()
+Undefined command: "35".  Try "help".
+#0  0x00007fffffffd8d0 in ?? ()
+#1  0x0000555555571002 in UIButton::UIButton<std::function<void (Event::MouseData)>&>(Event::MouseEvent*, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, int, int, std::function<void (Event::MouseData)>&)::{lambda(Event::MouseData)#1}::operator()(Event::MouseData) const (this=0x7fffffffd780, d=...) at src/include/hawktui.hpp:1080
+Backtrace stopped: previous frame inner to this frame (corrupt stack?)
+Starting program: /home/neosahadeo/Documents/Projects/Cpp/cppHawkTui/main
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/usr/lib/libthread_db.so.1".
+
+Program received signal SIGSEGV, Segmentation fault.
+0x00007fffffffd7c0 in ?? ()
+Starting program: /home/neosahadeo/Documents/Projects/Cpp/cppHawkTui/main
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/usr/lib/libthread_db.so.1".
+
+Program received signal SIGSEGV, Segmentation fault.
+0x00007fffffffd780 in ?? ()
+#0  0x00007fffffffd780 in ?? ()
+#1  0x0000555555567dba in std::function<void(Event::MouseData)>::operator() (this=0x7fffffffd730, __args=...) at /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.2.1/../../../../include/c++/15.2.1/bits/std_function.h:593
+#2  0x0000555555570182 in UIButton::UIButton<std::function<void (Event::MouseData)>&>(Event::MouseEvent*, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, int, int, std::function<void (Event::MouseData)>&)::{lambda(Event::MouseData)#1}::operator()(Event::MouseData) const (this=0x555555614140, d=...) at src/include/hawktui.hpp:1081
+#3  0x0000555555570083 in std::__invoke_impl<void, UIButton::UIButton<std::function<void (Event::MouseData)>&>(Event::MouseEvent*, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, int, int, std::function<void (Event::MouseData)>&)::{lambda(Event::MouseData)#1}&, Event::MouseData>(std::__invoke_other, UIButton::UIButton<std::function<void (Event::MouseData)>&>(Event::MouseEvent*, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, int, int, std::function<void (Event::MouseData)>&)::{lambda(Event::MouseData)#1}&, Event::MouseData&&) (__f=..., __args=...) at /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.2.1/../../../../include/c++/15.2.1/bits/invoke.h:63
+#4  0x000055555556fffd in std::__invoke_r<void, UIButton::UIButton<std::function<void (Event::MouseData)>&>(Event::MouseEvent*, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, int, int, std::function<void (Event::MouseData)>&)::{lambda(Event::MouseData)#1}&, Event::MouseData>(UIButton::UIButton<std::function<void (Event::MouseData)>&>(Event::MouseEvent*, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, int, int, std::function<void (Event::MouseData)>&)::{lambda(Event::MouseData)#1}&, Event::MouseData&&) (__fn=..., __args=...) at /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.2.1/../../../../include/c++/15.2.1/bits/invoke.h:113
+#5  0x000055555556ff15 in std::_Function_handler<void (Event::MouseData), UIButton::UIButton<std::function<void (Event::MouseData)>&>(Event::MouseEvent*, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, int, int, std::function<void (Event::MouseData)>&)::{lambda(Event::MouseData)#1}>::_M_invoke(std::_Any_data const&, Event::MouseData&&) (__functor=..., __args=...) at /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.2.1/../../../../include/c++/15.2.1/bits/std_function.h:292
+#6  0x0000555555567dba in std::function<void(Event::MouseData)>::operator() (this=0x555555614140, __args=...) at /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.2.1/../../../../include/c++/15.2.1/bits/std_function.h:593
+#7  0x0000555555567b12 in Event::GenericEvent<Event::MouseData>::update (this=0x5555555913b8, event=Event::Type::Click) at src/include/hawktui.hpp:154
+#8  0x0000555555559b12 in Event::Observer::notify (this=0x555555591338, event=Event::Type::Click) at src/include/hawktui.hpp:100
+#9  0x000055555555b418 in UIContext::start (this=0x555555591320) at src/include/hawktui.hpp:1027
+#10 0x000055555555bc5a in main () at src/main.cpp:61
